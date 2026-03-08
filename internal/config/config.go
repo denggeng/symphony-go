@@ -1,0 +1,450 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/denggeng/symphony-go/internal/workflow"
+	"gopkg.in/yaml.v3"
+)
+
+type Config struct {
+	Tracker      TrackerConfig      `yaml:"tracker" json:"tracker"`
+	Orchestrator OrchestratorConfig `yaml:"orchestrator" json:"orchestrator"`
+	Workspace    WorkspaceConfig    `yaml:"workspace" json:"workspace"`
+	Hooks        HooksConfig        `yaml:"hooks" json:"hooks"`
+	Agent        AgentConfig        `yaml:"agent" json:"agent"`
+	Codex        CodexConfig        `yaml:"codex" json:"codex"`
+	Server       ServerConfig       `yaml:"server" json:"server"`
+}
+
+type TrackerConfig struct {
+	Kind           string   `yaml:"kind" json:"kind"`
+	BaseURL        string   `yaml:"base_url" json:"base_url,omitempty"`
+	AuthMode       string   `yaml:"auth_mode" json:"auth_mode,omitempty"`
+	Email          string   `yaml:"email" json:"-"`
+	APIToken       string   `yaml:"api_token" json:"-"`
+	ProjectKey     string   `yaml:"project_key" json:"project_key,omitempty"`
+	JQL            string   `yaml:"jql" json:"jql,omitempty"`
+	ActiveStates   []string `yaml:"active_states" json:"active_states,omitempty"`
+	TerminalStates []string `yaml:"terminal_states" json:"terminal_states,omitempty"`
+	WebhookSecret  string   `yaml:"webhook_secret" json:"-"`
+}
+
+type OrchestratorConfig struct {
+	PollIntervalMs      int `yaml:"poll_interval_ms" json:"poll_interval_ms"`
+	MaxConcurrentAgents int `yaml:"max_concurrent_agents" json:"max_concurrent_agents"`
+	MaxRetryBackoffMs   int `yaml:"max_retry_backoff_ms" json:"max_retry_backoff_ms"`
+}
+
+type WorkspaceConfig struct {
+	Root string `yaml:"root" json:"root"`
+}
+
+type HooksConfig struct {
+	AfterCreate  string `yaml:"after_create" json:"after_create,omitempty"`
+	BeforeRun    string `yaml:"before_run" json:"before_run,omitempty"`
+	AfterRun     string `yaml:"after_run" json:"after_run,omitempty"`
+	BeforeRemove string `yaml:"before_remove" json:"before_remove,omitempty"`
+	TimeoutMs    int    `yaml:"timeout_ms" json:"timeout_ms"`
+}
+
+type AgentConfig struct {
+	MaxTurns int `yaml:"max_turns" json:"max_turns"`
+}
+
+type CodexConfig struct {
+	Command           string         `yaml:"command" json:"command"`
+	ApprovalPolicy    any            `yaml:"approval_policy" json:"approval_policy,omitempty"`
+	ThreadSandbox     string         `yaml:"thread_sandbox" json:"thread_sandbox,omitempty"`
+	TurnSandboxPolicy map[string]any `yaml:"turn_sandbox_policy" json:"turn_sandbox_policy,omitempty"`
+	ReadTimeoutMs     int            `yaml:"read_timeout_ms" json:"read_timeout_ms"`
+	TurnTimeoutMs     int            `yaml:"turn_timeout_ms" json:"turn_timeout_ms"`
+	StallTimeoutMs    int            `yaml:"stall_timeout_ms" json:"stall_timeout_ms"`
+}
+
+type ServerConfig struct {
+	Host string `yaml:"host" json:"host"`
+	Port int    `yaml:"port" json:"port"`
+}
+
+type Summary struct {
+	Tracker      TrackerSummary      `json:"tracker"`
+	Orchestrator OrchestratorSummary `json:"orchestrator"`
+	Workspace    WorkspaceSummary    `json:"workspace"`
+	Hooks        HooksSummary        `json:"hooks"`
+	Agent        AgentSummary        `json:"agent"`
+	Codex        CodexSummary        `json:"codex"`
+	Server       ServerSummary       `json:"server"`
+}
+
+type TrackerSummary struct {
+	Kind           string   `json:"kind,omitempty"`
+	BaseURL        string   `json:"base_url,omitempty"`
+	AuthMode       string   `json:"auth_mode,omitempty"`
+	ProjectKey     string   `json:"project_key,omitempty"`
+	JQL            string   `json:"jql,omitempty"`
+	ActiveStates   []string `json:"active_states,omitempty"`
+	TerminalStates []string `json:"terminal_states,omitempty"`
+	HasCredentials bool     `json:"has_credentials"`
+	HasWebhookAuth bool     `json:"has_webhook_auth"`
+}
+
+type OrchestratorSummary struct {
+	PollIntervalMs      int `json:"poll_interval_ms"`
+	MaxConcurrentAgents int `json:"max_concurrent_agents"`
+	MaxRetryBackoffMs   int `json:"max_retry_backoff_ms"`
+}
+
+type WorkspaceSummary struct {
+	Root string `json:"root"`
+}
+
+type HooksSummary struct {
+	AfterCreate  bool `json:"after_create"`
+	BeforeRun    bool `json:"before_run"`
+	AfterRun     bool `json:"after_run"`
+	BeforeRemove bool `json:"before_remove"`
+	TimeoutMs    int  `json:"timeout_ms"`
+}
+
+type AgentSummary struct {
+	MaxTurns int `json:"max_turns"`
+}
+
+type CodexSummary struct {
+	Command        string `json:"command"`
+	ApprovalPolicy any    `json:"approval_policy,omitempty"`
+	ThreadSandbox  string `json:"thread_sandbox,omitempty"`
+	HasTurnSandbox bool   `json:"has_turn_sandbox"`
+	ReadTimeoutMs  int    `json:"read_timeout_ms"`
+	TurnTimeoutMs  int    `json:"turn_timeout_ms"`
+	StallTimeoutMs int    `json:"stall_timeout_ms"`
+}
+
+type ServerSummary struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+func FromWorkflow(definition workflow.Definition) (Config, error) {
+	var cfg Config
+
+	if len(definition.Config) > 0 {
+		payload, err := yaml.Marshal(definition.Config)
+		if err != nil {
+			return Config{}, fmt.Errorf("encode workflow config: %w", err)
+		}
+
+		if err := yaml.Unmarshal(payload, &cfg); err != nil {
+			return Config{}, fmt.Errorf("decode workflow config: %w", err)
+		}
+	}
+
+	applyDefaults(&cfg)
+	expandEnvironment(&cfg)
+
+	if err := validate(cfg); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
+func (cfg Config) Summary() Summary {
+	return Summary{
+		Tracker: TrackerSummary{
+			Kind:           cfg.Tracker.Kind,
+			BaseURL:        cfg.Tracker.BaseURL,
+			AuthMode:       cfg.Tracker.AuthMode,
+			ProjectKey:     cfg.Tracker.ProjectKey,
+			JQL:            cfg.Tracker.JQL,
+			ActiveStates:   append([]string(nil), cfg.Tracker.ActiveStates...),
+			TerminalStates: append([]string(nil), cfg.Tracker.TerminalStates...),
+			HasCredentials: cfg.Tracker.APIToken != "",
+			HasWebhookAuth: cfg.Tracker.WebhookSecret != "",
+		},
+		Orchestrator: OrchestratorSummary{
+			PollIntervalMs:      cfg.Orchestrator.PollIntervalMs,
+			MaxConcurrentAgents: cfg.Orchestrator.MaxConcurrentAgents,
+			MaxRetryBackoffMs:   cfg.Orchestrator.MaxRetryBackoffMs,
+		},
+		Workspace: WorkspaceSummary{Root: cfg.Workspace.Root},
+		Hooks: HooksSummary{
+			AfterCreate:  strings.TrimSpace(cfg.Hooks.AfterCreate) != "",
+			BeforeRun:    strings.TrimSpace(cfg.Hooks.BeforeRun) != "",
+			AfterRun:     strings.TrimSpace(cfg.Hooks.AfterRun) != "",
+			BeforeRemove: strings.TrimSpace(cfg.Hooks.BeforeRemove) != "",
+			TimeoutMs:    cfg.Hooks.TimeoutMs,
+		},
+		Agent: AgentSummary{MaxTurns: cfg.Agent.MaxTurns},
+		Codex: CodexSummary{
+			Command:        cfg.Codex.Command,
+			ApprovalPolicy: sanitizedApprovalPolicy(cfg.Codex.ApprovalPolicy),
+			ThreadSandbox:  cfg.Codex.ThreadSandbox,
+			HasTurnSandbox: len(cfg.Codex.TurnSandboxPolicy) > 0,
+			ReadTimeoutMs:  cfg.Codex.ReadTimeoutMs,
+			TurnTimeoutMs:  cfg.Codex.TurnTimeoutMs,
+			StallTimeoutMs: cfg.Codex.StallTimeoutMs,
+		},
+		Server: ServerSummary{Host: cfg.Server.Host, Port: cfg.Server.Port},
+	}
+}
+
+func (cfg Config) ActiveStateSet() map[string]struct{} {
+	return toStateSet(cfg.Tracker.ActiveStates)
+}
+
+func (cfg Config) TerminalStateSet() map[string]struct{} {
+	return toStateSet(cfg.Tracker.TerminalStates)
+}
+
+func (cfg Config) IsActiveState(state string) bool {
+	_, ok := cfg.ActiveStateSet()[normalizeState(state)]
+	return ok
+}
+
+func (cfg Config) IsTerminalState(state string) bool {
+	_, ok := cfg.TerminalStateSet()[normalizeState(state)]
+	return ok
+}
+
+func (cfg Config) EffectiveTurnSandboxPolicy(workspace string) map[string]any {
+	policy := cloneMap(cfg.Codex.TurnSandboxPolicy)
+	if len(policy) == 0 {
+		policy = map[string]any{"type": "workspaceWrite", "root": workspace}
+	}
+	if _, ok := policy["root"]; !ok && strings.EqualFold(asString(policy["type"]), "workspaceWrite") {
+		policy["root"] = workspace
+	}
+	return policy
+}
+
+func DefaultPromptTemplate() string {
+	return strings.TrimSpace(`You are working on a Jira issue.
+
+Identifier: {{ issue.identifier }}
+Title: {{ issue.title }}
+
+Body:
+{% if issue.description %}
+{{ issue.description }}
+{% else %}
+No description provided.
+{% endif %}`)
+}
+
+func applyDefaults(cfg *Config) {
+	if strings.TrimSpace(cfg.Tracker.Kind) == "" {
+		cfg.Tracker.Kind = "jira"
+	}
+	if cfg.Tracker.ActiveStates == nil {
+		cfg.Tracker.ActiveStates = []string{"To Do", "In Progress"}
+	}
+	if cfg.Tracker.TerminalStates == nil {
+		cfg.Tracker.TerminalStates = []string{"Done", "Closed", "Cancelled", "Canceled", "Duplicate"}
+	}
+	if strings.TrimSpace(cfg.Tracker.AuthMode) == "" {
+		cfg.Tracker.AuthMode = "token"
+	}
+	if cfg.Orchestrator.PollIntervalMs <= 0 {
+		cfg.Orchestrator.PollIntervalMs = 30_000
+	}
+	if cfg.Orchestrator.MaxConcurrentAgents <= 0 {
+		cfg.Orchestrator.MaxConcurrentAgents = 4
+	}
+	if cfg.Orchestrator.MaxRetryBackoffMs <= 0 {
+		cfg.Orchestrator.MaxRetryBackoffMs = 300_000
+	}
+	if strings.TrimSpace(cfg.Workspace.Root) == "" {
+		cfg.Workspace.Root = filepath.Join(os.TempDir(), "symphony-workspaces")
+	}
+	if cfg.Hooks.TimeoutMs <= 0 {
+		cfg.Hooks.TimeoutMs = 60_000
+	}
+	if cfg.Agent.MaxTurns <= 0 {
+		cfg.Agent.MaxTurns = 20
+	}
+	if strings.TrimSpace(cfg.Codex.Command) == "" {
+		cfg.Codex.Command = "codex app-server"
+	}
+	if cfg.Codex.ApprovalPolicy == nil {
+		cfg.Codex.ApprovalPolicy = "never"
+	}
+	if strings.TrimSpace(cfg.Codex.ThreadSandbox) == "" {
+		cfg.Codex.ThreadSandbox = "workspace-write"
+	}
+	if cfg.Codex.ReadTimeoutMs <= 0 {
+		cfg.Codex.ReadTimeoutMs = 5_000
+	}
+	if cfg.Codex.TurnTimeoutMs <= 0 {
+		cfg.Codex.TurnTimeoutMs = 3_600_000
+	}
+	if cfg.Codex.StallTimeoutMs <= 0 {
+		cfg.Codex.StallTimeoutMs = 300_000
+	}
+	if strings.TrimSpace(cfg.Server.Host) == "" {
+		cfg.Server.Host = "127.0.0.1"
+	}
+	if cfg.Server.Port <= 0 {
+		cfg.Server.Port = 8080
+	}
+}
+
+func expandEnvironment(cfg *Config) {
+	cfg.Tracker.BaseURL = expandString(cfg.Tracker.BaseURL)
+	cfg.Tracker.Email = expandString(cfg.Tracker.Email)
+	cfg.Tracker.APIToken = expandString(cfg.Tracker.APIToken)
+	cfg.Tracker.ProjectKey = expandString(cfg.Tracker.ProjectKey)
+	cfg.Tracker.JQL = expandString(cfg.Tracker.JQL)
+	cfg.Tracker.WebhookSecret = expandString(cfg.Tracker.WebhookSecret)
+	cfg.Workspace.Root = expandPath(cfg.Workspace.Root)
+	cfg.Hooks.AfterCreate = expandString(cfg.Hooks.AfterCreate)
+	cfg.Hooks.BeforeRun = expandString(cfg.Hooks.BeforeRun)
+	cfg.Hooks.AfterRun = expandString(cfg.Hooks.AfterRun)
+	cfg.Hooks.BeforeRemove = expandString(cfg.Hooks.BeforeRemove)
+	cfg.Codex.Command = expandString(cfg.Codex.Command)
+	cfg.Codex.ThreadSandbox = expandString(cfg.Codex.ThreadSandbox)
+	cfg.Server.Host = expandString(cfg.Server.Host)
+	cfg.Codex.ApprovalPolicy = expandValue(cfg.Codex.ApprovalPolicy)
+	cfg.Codex.TurnSandboxPolicy = expandMap(cfg.Codex.TurnSandboxPolicy)
+}
+
+func validate(cfg Config) error {
+	if cfg.Tracker.Kind != "jira" {
+		return fmt.Errorf("tracker.kind must be jira in the current implementation")
+	}
+	if cfg.Orchestrator.PollIntervalMs <= 0 {
+		return fmt.Errorf("orchestrator.poll_interval_ms must be greater than 0")
+	}
+	if cfg.Orchestrator.MaxConcurrentAgents <= 0 {
+		return fmt.Errorf("orchestrator.max_concurrent_agents must be greater than 0")
+	}
+	if cfg.Orchestrator.MaxRetryBackoffMs <= 0 {
+		return fmt.Errorf("orchestrator.max_retry_backoff_ms must be greater than 0")
+	}
+	if strings.TrimSpace(cfg.Workspace.Root) == "" {
+		return fmt.Errorf("workspace.root must not be empty")
+	}
+	if cfg.Agent.MaxTurns <= 0 {
+		return fmt.Errorf("agent.max_turns must be greater than 0")
+	}
+	if strings.TrimSpace(cfg.Codex.Command) == "" {
+		return fmt.Errorf("codex.command must not be empty")
+	}
+	if cfg.Codex.ReadTimeoutMs <= 0 || cfg.Codex.TurnTimeoutMs <= 0 || cfg.Codex.StallTimeoutMs <= 0 {
+		return fmt.Errorf("codex timeouts must be greater than 0")
+	}
+	if cfg.Server.Port < 0 || cfg.Server.Port > 65_535 {
+		return fmt.Errorf("server.port must be between 0 and 65535")
+	}
+	return nil
+}
+
+func toStateSet(states []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(states))
+	for _, state := range states {
+		if normalized := normalizeState(state); normalized != "" {
+			result[normalized] = struct{}{}
+		}
+	}
+	return result
+}
+
+func normalizeState(state string) string {
+	return strings.ToLower(strings.TrimSpace(state))
+}
+
+func expandString(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return os.ExpandEnv(trimmed)
+}
+
+func expandPath(value string) string {
+	expanded := expandString(value)
+	if expanded == "" {
+		return filepath.Join(os.TempDir(), "symphony-workspaces")
+	}
+	if expanded == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home
+		}
+	}
+	if strings.HasPrefix(expanded, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, strings.TrimPrefix(expanded, "~/"))
+		}
+	}
+	return expanded
+}
+
+func expandMap(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return values
+	}
+	result := make(map[string]any, len(values))
+	for key, value := range values {
+		result[key] = expandValue(value)
+	}
+	return result
+}
+
+func expandSlice(values []any) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, expandValue(value))
+	}
+	return result
+}
+
+func expandValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return expandString(typed)
+	case map[string]any:
+		return expandMap(typed)
+	case []any:
+		return expandSlice(typed)
+	default:
+		return value
+	}
+}
+
+func cloneMap(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return map[string]any{}
+	}
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return map[string]any{}
+	}
+	var cloned map[string]any
+	if err := json.Unmarshal(payload, &cloned); err != nil {
+		return map[string]any{}
+	}
+	return cloned
+}
+
+func asString(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func sanitizedApprovalPolicy(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case map[string]any:
+		return cloneMap(typed)
+	default:
+		return typed
+	}
+}

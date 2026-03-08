@@ -9,6 +9,7 @@ It is designed for teams or individual builders who want an agent orchestration 
 - runs `codex app-server` inside the workspace
 - keeps work moving with retries and continuation turns
 - exposes runtime state through a simple HTTP API
+- includes a live HTML dashboard with SSE updates
 
 This project is **not** an official OpenAI implementation.
 
@@ -85,11 +86,13 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 
 ## HTTP API
 
-- `GET /` — basic route list
+- `GET /` — live HTML dashboard
 - `GET /healthz` — health probe
 - `GET /api/v1/state` — full runtime snapshot
 - `POST /api/v1/refresh` — queue a poll/reconcile cycle
+- `GET /issues/{identifier}` — issue detail page
 - `GET /api/v1/issues/{identifier}` — running issue details
+- `GET /events` — SSE live snapshot stream
 - `POST /api/v1/webhooks/jira` — queue refresh from Jira webhook
 
 If `tracker.webhook_secret` is configured, provide it in either:
@@ -134,7 +137,7 @@ curl http://127.0.0.1:8080/api/v1/state
 - `internal/agent/codexappserver` — Codex app-server client
 - `internal/runner` — one-issue execution loop
 - `internal/orchestrator` — scheduling, retries, reconciliation, state
-- `internal/server` — HTTP API and webhook handling
+- `internal/server` — HTTP API, HTML dashboard, SSE, and webhook handling
 - `docs/` — architecture and operational docs
 
 ## Docs

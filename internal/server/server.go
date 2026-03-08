@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/denggeng/symphony-go/internal/orchestrator"
 )
@@ -33,29 +34,36 @@ func New(opts Options) *Server {
 	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
 	server := &Server{logger: logger, controller: opts.Controller, addr: addr}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", server.handleIndex)
 	mux.HandleFunc("/healthz", server.handleHealthz)
+	mux.HandleFunc("/events", server.handleEvents)
+	mux.HandleFunc("/issues/", server.handleIssuePage)
 	mux.HandleFunc("/api/v1/state", server.handleState)
 	mux.HandleFunc("/api/v1/refresh", server.handleRefresh)
 	mux.HandleFunc("/api/v1/issues/", server.handleIssue)
 	mux.HandleFunc("/api/v1/webhooks/jira", server.handleJiraWebhook)
-	server.httpServer = &http.Server{Addr: addr, Handler: mux}
+	mux.HandleFunc("/", server.handleDashboardPage)
+	server.httpServer = &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	return server
 }
 
 func (server *Server) Addr() string { return server.addr }
+
 func (server *Server) Start() error {
 	server.logger.Info("http server listening", slog.String("addr", server.addr))
 	return server.httpServer.ListenAndServe()
 }
+
 func (server *Server) Shutdown(ctx context.Context) error { return server.httpServer.Shutdown(ctx) }
 
-func (server *Server) handleIndex(writer http.ResponseWriter, _ *http.Request) {
-	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = writer.Write([]byte("symphony-go\n\nGET /healthz\nGET /api/v1/state\nPOST /api/v1/refresh\nGET /api/v1/issues/{identifier}\nPOST /api/v1/webhooks/jira\n"))
-}
-
-func (server *Server) handleHealthz(writer http.ResponseWriter, _ *http.Request) {
+func (server *Server) handleHealthz(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	server.writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -72,12 +80,20 @@ func (server *Server) handleRefresh(writer http.ResponseWriter, request *http.Re
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if server.controller == nil {
+		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
+		return
+	}
 	server.writeJSON(writer, http.StatusOK, server.controller.RequestRefresh())
 }
 
 func (server *Server) handleIssue(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if server.controller == nil {
+		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
 		return
 	}
 	identifier := strings.TrimPrefix(request.URL.Path, "/api/v1/issues/")
@@ -97,6 +113,10 @@ func (server *Server) handleIssue(writer http.ResponseWriter, request *http.Requ
 func (server *Server) handleJiraWebhook(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if server.controller == nil {
+		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
 		return
 	}
 	secret := request.URL.Query().Get("secret")

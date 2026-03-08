@@ -1,10 +1,12 @@
 package orchestrator
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -267,6 +269,18 @@ func (controller *Controller) Snapshot() Snapshot {
 			Continuation: entry.Continuation,
 		})
 	}
+	slices.SortFunc(running, func(left RunningSnapshot, right RunningSnapshot) int {
+		if diff := cmp.Compare(left.Identifier, right.Identifier); diff != 0 {
+			return diff
+		}
+		return cmp.Compare(left.IssueID, right.IssueID)
+	})
+	slices.SortFunc(retrying, func(left RetryingSnapshot, right RetryingSnapshot) int {
+		if diff := cmp.Compare(left.DueAt.UnixMilli(), right.DueAt.UnixMilli()); diff != 0 {
+			return diff
+		}
+		return cmp.Compare(left.Identifier, right.Identifier)
+	})
 	return Snapshot{
 		Service:  ServiceSnapshot{Name: "symphony-go", Version: "dev", StartedAt: controller.startedAt, Uptime: now.Sub(controller.startedAt).Round(time.Second).String()},
 		Workflow: WorkflowSnapshot{Path: controller.workflow.Path, LoadedAt: controller.startedAt, HasFrontMatter: controller.workflow.HasFrontMatter, PromptLength: len(controller.workflow.Prompt)},

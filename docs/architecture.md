@@ -11,7 +11,7 @@
 - `agent/codexappserver`: speaks to `codex app-server` over stdio
 - `runner`: executes one issue through workspace + agent turns
 - `orchestrator`: polling, retries, reconciliation, cancellation, and snapshots
-- `server`: JSON API and Jira webhook endpoint
+- `server`: JSON API, HTML dashboard, SSE live updates, and Jira webhook endpoint
 
 ## Runtime flow
 

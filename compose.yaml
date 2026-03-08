@@ -1,0 +1,25 @@
+services:
+  symphony:
+    build:
+      context: .
+      args:
+        CODEX_INSTALL_COMMAND: ${CODEX_INSTALL_COMMAND:-}
+    ports:
+      - "${SYMPHONY_HTTP_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      SYMPHONY_WORKSPACE_ROOT: /var/lib/symphony/workspaces
+    volumes:
+      - ./WORKFLOW.md:/app/WORKFLOW.md:ro
+      - symphony-workspaces:/var/lib/symphony/workspaces
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  symphony-workspaces:

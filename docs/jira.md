@@ -22,3 +22,6 @@ If `tracker.webhook_secret` is configured, send it either as:
 
 - query parameter `?secret=...`
 - header `X-Symphony-Webhook-Secret`
+
+When server Basic auth is enabled, the webhook endpoint accepts either valid
+Basic auth credentials or a valid webhook secret.

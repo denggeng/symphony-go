@@ -278,6 +278,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
             <dt>Max Agents</dt><dd id="config-max-agents">—</dd>
             <dt>Agent Max Turns</dt><dd id="config-max-turns">—</dd>
             <dt>Codex Command</dt><dd id="config-codex-command">—</dd>
+            <dt>Server Auth</dt><dd id="config-server-auth">—</dd>
           </dl>
         </article>
       </section>
@@ -457,6 +458,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setText('config-max-agents', config.orchestrator ? String(config.orchestrator.max_concurrent_agents ?? '—') : '—');
         setText('config-max-turns', config.agent ? String(config.agent.max_turns ?? '—') : '—');
         setText('config-codex-command', config.codex ? (config.codex.command || '—') : '—');
+        setText('config-server-auth', config.server && config.server.auth_enabled ? 'Enabled (Basic auth)' : 'Disabled');
 
         showError(polling.last_error || '');
 
@@ -637,6 +639,9 @@ func (server *Server) handleDashboardPage(writer http.ResponseWriter, request *h
 		http.NotFound(writer, request)
 		return
 	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	server.renderPage(writer, http.StatusOK, pageData{Title: "symphony-go dashboard", PageKind: "dashboard"})
 }
 
@@ -650,12 +655,18 @@ func (server *Server) handleIssuePage(writer http.ResponseWriter, request *http.
 		http.NotFound(writer, request)
 		return
 	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	server.renderPage(writer, http.StatusOK, pageData{Title: "Issue · symphony-go", PageKind: "issue", IssueIdentifier: identifier})
 }
 
 func (server *Server) handleEvents(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !server.requireAuth(writer, request) {
 		return
 	}
 	if server.controller == nil {

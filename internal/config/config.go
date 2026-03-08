@@ -67,8 +67,10 @@ type CodexConfig struct {
 }
 
 type ServerConfig struct {
-	Host string `yaml:"host" json:"host"`
-	Port int    `yaml:"port" json:"port"`
+	Host     string `yaml:"host" json:"host"`
+	Port     int    `yaml:"port" json:"port"`
+	Username string `yaml:"username" json:"-"`
+	Password string `yaml:"password" json:"-"`
 }
 
 type Summary struct {
@@ -126,8 +128,9 @@ type CodexSummary struct {
 }
 
 type ServerSummary struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	AuthEnabled bool   `json:"auth_enabled"`
 }
 
 func FromWorkflow(definition workflow.Definition) (Config, error) {
@@ -190,7 +193,7 @@ func (cfg Config) Summary() Summary {
 			TurnTimeoutMs:  cfg.Codex.TurnTimeoutMs,
 			StallTimeoutMs: cfg.Codex.StallTimeoutMs,
 		},
-		Server: ServerSummary{Host: cfg.Server.Host, Port: cfg.Server.Port},
+		Server: ServerSummary{Host: cfg.Server.Host, Port: cfg.Server.Port, AuthEnabled: cfg.Server.Username != "" && cfg.Server.Password != ""},
 	}
 }
 
@@ -309,6 +312,8 @@ func expandEnvironment(cfg *Config) {
 	cfg.Codex.Command = expandString(cfg.Codex.Command)
 	cfg.Codex.ThreadSandbox = expandString(cfg.Codex.ThreadSandbox)
 	cfg.Server.Host = expandString(cfg.Server.Host)
+	cfg.Server.Username = expandString(cfg.Server.Username)
+	cfg.Server.Password = expandString(cfg.Server.Password)
 	cfg.Codex.ApprovalPolicy = expandValue(cfg.Codex.ApprovalPolicy)
 	cfg.Codex.TurnSandboxPolicy = expandMap(cfg.Codex.TurnSandboxPolicy)
 }
@@ -340,6 +345,11 @@ func validate(cfg Config) error {
 	}
 	if cfg.Server.Port < 0 || cfg.Server.Port > 65_535 {
 		return fmt.Errorf("server.port must be between 0 and 65535")
+	}
+	usernameSet := strings.TrimSpace(cfg.Server.Username) != ""
+	passwordSet := strings.TrimSpace(cfg.Server.Password) != ""
+	if usernameSet != passwordSet {
+		return fmt.Errorf("server.username and server.password must be set together")
 	}
 	return nil
 }

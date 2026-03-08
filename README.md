@@ -11,6 +11,8 @@ It is designed for teams or individual builders who want an agent orchestration 
 - exposes runtime state through a simple HTTP API
 - includes a live HTML dashboard with SSE updates
 - keeps recent run history and sanitized event logs in memory
+- supports optional HTTP Basic auth for UI and API access
+- includes Docker and Compose scaffolding for self-hosted deployment
 
 This project is **not** an official OpenAI implementation.
 
@@ -50,6 +52,11 @@ Fill in at least:
 go mod tidy
 go run ./cmd/symphonyd
 ```
+
+Optional Basic auth for the UI and API:
+
+- `SYMPHONY_SERVER_AUTH_USERNAME`
+- `SYMPHONY_SERVER_AUTH_PASSWORD`
 
 ### 3. Inspect state
 
@@ -100,6 +107,9 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 - `GET /events` — SSE live snapshot stream
 - `POST /api/v1/webhooks/jira` — queue refresh from Jira webhook
 
+When `server.username` and `server.password` are configured, all pages and API
+routes except `/healthz` require HTTP Basic auth.
+
 If `tracker.webhook_secret` is configured, provide it in either:
 
 - query parameter `?secret=...`
@@ -132,6 +142,19 @@ go run ./cmd/symphonyd
 curl http://127.0.0.1:8080/api/v1/state
 ```
 
+## Docker Compose
+
+```bash
+cp .env.example .env
+# optionally set CODEX_INSTALL_COMMAND and Basic auth vars
+
+docker compose build
+docker compose up -d
+```
+
+The bundled `compose.yaml` is self-hosted scaffolding. Your image still needs a
+working `codex` CLI, either via `CODEX_INSTALL_COMMAND` or a custom image.
+
 ## Project layout
 
 - `cmd/symphonyd` — binary entrypoint
@@ -151,6 +174,7 @@ curl http://127.0.0.1:8080/api/v1/state
 - `docs/configuration.md`
 - `docs/jira.md`
 - `docs/development.md`
+- `docs/deployment.md`
 
 ## Safety notes
 

@@ -18,3 +18,14 @@ GOPROXY=https://proxy.golang.org,direct go test ./...
 - Prometheus metrics
 - more detailed status UI
 - additional tracker adapters
+
+
+## Docker compose
+
+```bash
+docker compose build
+docker compose up
+```
+
+Set `CODEX_INSTALL_COMMAND` in `.env` if your container image needs to install
+`codex` during build.

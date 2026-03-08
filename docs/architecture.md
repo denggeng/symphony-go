@@ -11,7 +11,7 @@
 - `agent/codexappserver`: speaks to `codex app-server` over stdio
 - `runner`: executes one issue through workspace + agent turns
 - `orchestrator`: polling, retries, reconciliation, cancellation, snapshots, and recent run history
-- `server`: JSON API, HTML dashboard, history/log pages, SSE live updates, and Jira webhook endpoint
+- `server`: JSON API, HTML dashboard, history/log pages, SSE live updates, webhook handling, and optional Basic auth
 
 ## Runtime flow
 
@@ -31,3 +31,4 @@
 - Workspace paths are sanitized and rejected if they escape the root.
 - Workspace hooks run with timeouts.
 - Tracker secrets are never exposed in the JSON state API.
+- Optional server Basic auth credentials are never exposed in state or logs.

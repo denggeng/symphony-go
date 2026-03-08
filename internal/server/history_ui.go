@@ -418,6 +418,9 @@ func (server *Server) handleHistoryPage(writer http.ResponseWriter, request *htt
 		http.NotFound(writer, request)
 		return
 	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	server.renderHistoryUI(writer, http.StatusOK, historyPageData{Title: "Run history · symphony-go", PageKind: "history"})
 }
 
@@ -429,6 +432,9 @@ func (server *Server) handleRunHistoryPage(writer http.ResponseWriter, request *
 	runID := strings.TrimSpace(strings.TrimPrefix(request.URL.Path, "/history/"))
 	if runID == "" {
 		http.NotFound(writer, request)
+		return
+	}
+	if !server.requireAuth(writer, request) {
 		return
 	}
 	server.renderHistoryUI(writer, http.StatusOK, historyPageData{Title: "Run detail · symphony-go", PageKind: "run", RunID: runID})

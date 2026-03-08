@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -13,17 +14,21 @@ import (
 )
 
 type Options struct {
-	Logger     *slog.Logger
-	Host       string
-	Port       int
-	Controller *orchestrator.Controller
+	Logger       *slog.Logger
+	Host         string
+	Port         int
+	Controller   *orchestrator.Controller
+	AuthUsername string
+	AuthPassword string
 }
 
 type Server struct {
-	logger     *slog.Logger
-	httpServer *http.Server
-	controller *orchestrator.Controller
-	addr       string
+	logger       *slog.Logger
+	httpServer   *http.Server
+	controller   *orchestrator.Controller
+	addr         string
+	authUsername string
+	authPassword string
 }
 
 func New(opts Options) *Server {
@@ -32,7 +37,7 @@ func New(opts Options) *Server {
 		logger = slog.Default()
 	}
 	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
-	server := &Server{logger: logger, controller: opts.Controller, addr: addr}
+	server := &Server{logger: logger, controller: opts.Controller, addr: addr, authUsername: strings.TrimSpace(opts.AuthUsername), authPassword: strings.TrimSpace(opts.AuthPassword)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/events", server.handleEvents)
@@ -56,6 +61,31 @@ func New(opts Options) *Server {
 
 func (server *Server) Addr() string { return server.addr }
 
+func (server *Server) authEnabled() bool {
+	return server.authUsername != "" && server.authPassword != ""
+}
+
+func (server *Server) isAuthorized(request *http.Request) bool {
+	if !server.authEnabled() {
+		return true
+	}
+	username, password, ok := request.BasicAuth()
+	if !ok {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(username), []byte(server.authUsername)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(password), []byte(server.authPassword)) == 1
+}
+
+func (server *Server) requireAuth(writer http.ResponseWriter, request *http.Request) bool {
+	if server.isAuthorized(request) {
+		return true
+	}
+	writer.Header().Set("WWW-Authenticate", `Basic realm="symphony-go"`)
+	server.writeError(writer, http.StatusUnauthorized, "authentication required")
+	return false
+}
+
 func (server *Server) Start() error {
 	server.logger.Info("http server listening", slog.String("addr", server.addr))
 	return server.httpServer.ListenAndServe()
@@ -71,7 +101,14 @@ func (server *Server) handleHealthz(writer http.ResponseWriter, request *http.Re
 	server.writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (server *Server) handleState(writer http.ResponseWriter, _ *http.Request) {
+func (server *Server) handleState(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	if server.controller == nil {
 		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
 		return
@@ -84,6 +121,9 @@ func (server *Server) handleHistory(writer http.ResponseWriter, request *http.Re
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	if server.controller == nil {
 		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
 		return
@@ -94,6 +134,9 @@ func (server *Server) handleHistory(writer http.ResponseWriter, request *http.Re
 func (server *Server) handleRunHistory(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !server.requireAuth(writer, request) {
 		return
 	}
 	if server.controller == nil {
@@ -118,6 +161,9 @@ func (server *Server) handleRefresh(writer http.ResponseWriter, request *http.Re
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if !server.requireAuth(writer, request) {
+		return
+	}
 	if server.controller == nil {
 		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
 		return
@@ -128,6 +174,9 @@ func (server *Server) handleRefresh(writer http.ResponseWriter, request *http.Re
 func (server *Server) handleIssue(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !server.requireAuth(writer, request) {
 		return
 	}
 	if server.controller == nil {
@@ -160,6 +209,16 @@ func (server *Server) handleJiraWebhook(writer http.ResponseWriter, request *htt
 	secret := request.URL.Query().Get("secret")
 	if secret == "" {
 		secret = request.Header.Get("X-Symphony-Webhook-Secret")
+	}
+	if server.authEnabled() && !server.isAuthorized(request) {
+		response, err := server.controller.HandleJiraWebhook(secret)
+		if err == nil {
+			server.writeJSON(writer, http.StatusOK, response)
+			return
+		}
+		writer.Header().Set("WWW-Authenticate", `Basic realm="symphony-go"`)
+		server.writeError(writer, http.StatusUnauthorized, "authentication required or valid webhook secret")
+		return
 	}
 	response, err := server.controller.HandleJiraWebhook(secret)
 	if err != nil {

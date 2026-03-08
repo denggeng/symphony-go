@@ -62,7 +62,7 @@ func run() error {
 	renderer := prompt.New(loadedWorkflow)
 	runner := runner.New(runtimeConfig, logger, issueTracker, workspaceManager, backend, renderer)
 	controller := orchestrator.New(orchestrator.Options{Logger: logger, Workflow: loadedWorkflow, Config: runtimeConfig, Tracker: issueTracker, Workspace: workspaceManager, Runner: runner})
-	apiServer := server.New(server.Options{Logger: logger, Host: runtimeConfig.Server.Host, Port: runtimeConfig.Server.Port, Controller: controller})
+	apiServer := server.New(server.Options{Logger: logger, Host: runtimeConfig.Server.Host, Port: runtimeConfig.Server.Port, Controller: controller, AuthUsername: runtimeConfig.Server.Username, AuthPassword: runtimeConfig.Server.Password})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

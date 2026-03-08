@@ -14,11 +14,59 @@ import (
 )
 
 func newTestServer() *Server {
+	return newTestServerWithOptions(Options{Host: "127.0.0.1", Port: 8080})
+}
+
+func newTestServerWithOptions(options Options) *Server {
 	controller := orchestrator.New(orchestrator.Options{
 		Workflow: workflow.Definition{Path: "/tmp/WORKFLOW.md"},
 		Config:   config.Config{Orchestrator: config.OrchestratorConfig{PollIntervalMs: 30000}},
 	})
-	return New(Options{Host: "127.0.0.1", Port: 8080, Controller: controller})
+	options.Controller = controller
+	if options.Host == "" {
+		options.Host = "127.0.0.1"
+	}
+	if options.Port == 0 {
+		options.Port = 8080
+	}
+	return New(options)
+}
+
+func TestDashboardPageRequiresAuthWhenConfigured(t *testing.T) {
+	t.Parallel()
+	server := newTestServerWithOptions(Options{Host: "127.0.0.1", Port: 8080, AuthUsername: "admin", AuthPassword: "secret"})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
+	if authHeader := response.Header().Get("WWW-Authenticate"); !strings.Contains(authHeader, "Basic") {
+		t.Fatalf("expected auth challenge, got %q", authHeader)
+	}
+}
+
+func TestDashboardPageAcceptsValidBasicAuth(t *testing.T) {
+	t.Parallel()
+	server := newTestServerWithOptions(Options{Host: "127.0.0.1", Port: 8080, AuthUsername: "admin", AuthPassword: "secret"})
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
+}
+
+func TestHealthzBypassesAuth(t *testing.T) {
+	t.Parallel()
+	server := newTestServerWithOptions(Options{Host: "127.0.0.1", Port: 8080, AuthUsername: "admin", AuthPassword: "secret"})
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
 }
 
 func TestDashboardPageRendersHTML(t *testing.T) {

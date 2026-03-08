@@ -29,6 +29,8 @@ codex:
 server:
   host: 127.0.0.1
   port: 8080
+  username: $SYMPHONY_SERVER_AUTH_USERNAME
+  password: $SYMPHONY_SERVER_AUTH_PASSWORD
 ---
 You are working on a Jira issue.
 

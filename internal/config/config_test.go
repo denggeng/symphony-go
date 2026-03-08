@@ -48,3 +48,27 @@ func TestFromWorkflowRejectsUnknownTrackerKind(t *testing.T) {
 		t.Fatalf("expected validation error")
 	}
 }
+
+func TestFromWorkflowExpandsServerAuth(t *testing.T) {
+	t.Setenv("SYMPHONY_SERVER_AUTH_USERNAME", "admin")
+	t.Setenv("SYMPHONY_SERVER_AUTH_PASSWORD", "secret")
+	definition := workflow.Definition{Config: map[string]any{"server": map[string]any{"username": "$SYMPHONY_SERVER_AUTH_USERNAME", "password": "$SYMPHONY_SERVER_AUTH_PASSWORD"}}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if cfg.Server.Username != "admin" || cfg.Server.Password != "secret" {
+		t.Fatalf("unexpected server auth values: %#v", cfg.Server)
+	}
+	if !cfg.Summary().Server.AuthEnabled {
+		t.Fatalf("expected auth to be enabled in summary")
+	}
+}
+
+func TestFromWorkflowRejectsPartialServerAuth(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{"server": map[string]any{"username": "admin"}}}
+	if _, err := FromWorkflow(definition); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}

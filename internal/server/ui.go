@@ -224,6 +224,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         </div>
         <div class="actions">
           <a class="button secondary" href="/">Overview</a>
+          <a class="button secondary" href="/history">History</a>
           <button id="refresh-button" class="button">Refresh now</button>
           <div id="action-status" class="status-pill">Connecting live updates…</div>
         </div>
@@ -321,6 +322,27 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         <div id="retry-empty" class="empty">Retry queue is empty.</div>
       </section>
 
+      <section class="panel dashboard-view">
+        <h2>Recent Runs</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Finished</th>
+                <th>Runtime</th>
+                <th>Turns</th>
+                <th>Events</th>
+                <th>Workspace</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+        <div id="history-empty" class="empty">No completed runs recorded yet.</div>
+      </section>
+
       <section class="panel issue-view">
         <h2 class="issue-title" id="issue-heading">Issue</h2>
         <div class="issue-meta">
@@ -346,6 +368,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
       <div class="footer">
         API: <a href="/api/v1/state">/api/v1/state</a> ·
+        history: <a href="/history">/history</a> ·
         live stream: <a href="/events">/events</a> ·
         health: <a href="/healthz">/healthz</a>
       </div>
@@ -375,7 +398,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       function statusClass(text) {
         const value = String(text || '').toLowerCase();
         if (value.includes('fail') || value.includes('error') || value.includes('cancel')) return 'err';
-        if (value.includes('wait') || value.includes('retry') || value.includes('progress')) return 'warn';
+        if (value.includes('wait') || value.includes('retry') || value.includes('progress') || value.includes('continue') || value.includes('stop')) return 'warn';
         return 'ok';
       }
 
@@ -406,6 +429,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       function renderDashboard(snapshot) {
         const running = snapshot.running || [];
         const retrying = snapshot.retrying || [];
+        const history = snapshot.history || [];
         const config = snapshot.config || {};
         const polling = snapshot.polling || {};
         const service = snapshot.service || {};
@@ -474,6 +498,28 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
               '<td><span class="tag ' + (item.continuation ? 'warn' : 'err') + '">' + escapeHTML(item.continuation ? 'Continuation' : 'Failure') + '</span></td>' +
               '<td>' + escapeHTML(item.error || '—') + '</td>';
             retryBody.appendChild(row);
+          });
+        }
+
+        const historyBody = document.getElementById('history-body');
+        const historyEmpty = document.getElementById('history-empty');
+        historyBody.innerHTML = '';
+        if (!history.length) {
+          historyEmpty.style.display = 'block';
+        } else {
+          historyEmpty.style.display = 'none';
+          history.forEach(item => {
+            const row = document.createElement('tr');
+            const runLink = '/history/' + encodeURIComponent(item.run_id);
+            row.innerHTML = '' +
+              '<td><a href="' + runLink + '">' + escapeHTML(item.run_id) + '</a><div class="muted">' + escapeHTML(item.identifier || '—') + '</div></td>' +
+              '<td><span class="tag ' + statusClass(item.status) + '">' + escapeHTML(item.status || '—') + '</span></td>' +
+              '<td>' + escapeHTML(formatTime(item.finished_at)) + '</td>' +
+              '<td>' + escapeHTML(item.runtime_seconds) + 's</td>' +
+              '<td>' + escapeHTML(item.turns) + '</td>' +
+              '<td>' + escapeHTML(item.event_count) + '</td>' +
+              '<td><code>' + escapeHTML(item.workspace_path || '—') + '</code></td>';
+            historyBody.appendChild(row);
           });
         }
 

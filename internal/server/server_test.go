@@ -38,6 +38,38 @@ func TestDashboardPageRendersHTML(t *testing.T) {
 	}
 }
 
+func TestHistoryPageRendersHTML(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	request := httptest.NewRequest(http.MethodGet, "/history", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), "run history") {
+		t.Fatalf("expected history markup")
+	}
+}
+
+func TestRunHistoryPageRendersHTML(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	request := httptest.NewRequest(http.MethodGet, "/history/run-123", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `data-page-kind="run"`) {
+		t.Fatalf("expected run page kind")
+	}
+	if !strings.Contains(body, `data-run-id="run-123"`) {
+		t.Fatalf("expected run id in html")
+	}
+}
+
 func TestIssuePageRendersHTML(t *testing.T) {
 	t.Parallel()
 	server := newTestServer()
@@ -101,6 +133,34 @@ func TestEventsEndpointStreamsSnapshot(t *testing.T) {
 	}
 	if snapshot.Service.Name != "symphony-go" {
 		t.Fatalf("unexpected service name: %q", snapshot.Service.Name)
+	}
+}
+
+func TestHistoryEndpointReturnsJSON(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: %d", response.Code)
+	}
+	if contentType := response.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("unexpected content type: %q", contentType)
+	}
+	if !strings.Contains(response.Body.String(), `"runs": []`) {
+		t.Fatalf("expected empty history payload")
+	}
+}
+
+func TestRunHistoryEndpointMissingRunReturnsNotFound(t *testing.T) {
+	t.Parallel()
+	server := newTestServer()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/history/missing-run", nil)
+	response := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unexpected status code: %d", response.Code)
 	}
 }
 

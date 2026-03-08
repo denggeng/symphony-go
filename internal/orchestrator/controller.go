@@ -22,6 +22,9 @@ import (
 
 const continuationRetryDelay = 1 * time.Second
 const failureRetryBaseDelay = 10 * time.Second
+const maxRunHistoryEntries = 50
+const maxRunEventsPerRun = 200
+const maxSnapshotHistoryEntries = 12
 
 type Options struct {
 	Logger    *slog.Logger
@@ -50,11 +53,15 @@ type Controller struct {
 	running        map[string]*runningEntry
 	claimed        map[string]struct{}
 	retries        map[string]*retryEntry
+	history        []*historyEntry
+	historyByID    map[string]*historyEntry
+	nextRunSeq     int64
 	cancel         context.CancelFunc
 	started        bool
 }
 
 type runningEntry struct {
+	RunID         string
 	Issue         domain.Issue
 	Identifier    string
 	WorkspacePath string
@@ -70,6 +77,7 @@ type runningEntry struct {
 	LastMessage   string
 	LastTimestamp *time.Time
 	Usage         agent.Usage
+	Events        []RunEventSnapshot
 }
 
 type retryEntry struct {
@@ -82,13 +90,19 @@ type retryEntry struct {
 	Continuation bool
 }
 
+type historyEntry struct {
+	Run    RunHistorySnapshot
+	Events []RunEventSnapshot
+}
+
 type Snapshot struct {
-	Service  ServiceSnapshot    `json:"service"`
-	Workflow WorkflowSnapshot   `json:"workflow"`
-	Config   config.Summary     `json:"config"`
-	Polling  PollingSnapshot    `json:"polling"`
-	Running  []RunningSnapshot  `json:"running"`
-	Retrying []RetryingSnapshot `json:"retrying"`
+	Service  ServiceSnapshot      `json:"service"`
+	Workflow WorkflowSnapshot     `json:"workflow"`
+	Config   config.Summary       `json:"config"`
+	Polling  PollingSnapshot      `json:"polling"`
+	Running  []RunningSnapshot    `json:"running"`
+	Retrying []RetryingSnapshot   `json:"retrying"`
+	History  []RunHistorySnapshot `json:"history"`
 }
 
 type ServiceSnapshot struct {
@@ -114,9 +128,11 @@ type PollingSnapshot struct {
 }
 
 type RunningSnapshot struct {
+	RunID          string      `json:"run_id"`
 	IssueID        string      `json:"issue_id"`
 	Identifier     string      `json:"identifier"`
 	State          string      `json:"state"`
+	Title          string      `json:"title,omitempty"`
 	WorkspacePath  string      `json:"workspace_path"`
 	SessionID      string      `json:"session_id,omitempty"`
 	CodexPID       string      `json:"codex_app_server_pid,omitempty"`
@@ -130,6 +146,7 @@ type RunningSnapshot struct {
 	Usage          agent.Usage `json:"usage"`
 	StopRequested  bool        `json:"stop_requested"`
 	StopReason     string      `json:"stop_reason,omitempty"`
+	EventCount     int         `json:"event_count"`
 }
 
 type RetryingSnapshot struct {
@@ -140,6 +157,51 @@ type RetryingSnapshot struct {
 	DueInMs      int64     `json:"due_in_ms"`
 	Error        string    `json:"error,omitempty"`
 	Continuation bool      `json:"continuation"`
+}
+
+// RunEventSnapshot is a sanitized, UI-safe event emitted during one run.
+type RunEventSnapshot struct {
+	Timestamp         time.Time   `json:"timestamp"`
+	Type              string      `json:"type"`
+	SessionID         string      `json:"session_id,omitempty"`
+	ThreadID          string      `json:"thread_id,omitempty"`
+	TurnID            string      `json:"turn_id,omitempty"`
+	CodexAppServerPID string      `json:"codex_app_server_pid,omitempty"`
+	Message           string      `json:"message,omitempty"`
+	Usage             agent.Usage `json:"usage"`
+}
+
+// RunHistorySnapshot is the summary of a completed or interrupted run.
+type RunHistorySnapshot struct {
+	RunID          string      `json:"run_id"`
+	IssueID        string      `json:"issue_id"`
+	Identifier     string      `json:"identifier"`
+	Title          string      `json:"title,omitempty"`
+	State          string      `json:"state,omitempty"`
+	Status         string      `json:"status"`
+	WorkspacePath  string      `json:"workspace_path"`
+	SessionID      string      `json:"session_id,omitempty"`
+	CodexPID       string      `json:"codex_app_server_pid,omitempty"`
+	Turns          int         `json:"turns"`
+	RetryAttempt   int         `json:"retry_attempt"`
+	StartedAt      time.Time   `json:"started_at"`
+	FinishedAt     time.Time   `json:"finished_at"`
+	RuntimeSeconds int         `json:"runtime_seconds"`
+	LastEvent      string      `json:"last_event,omitempty"`
+	LastMessage    string      `json:"last_message,omitempty"`
+	LastTimestamp  *time.Time  `json:"last_timestamp,omitempty"`
+	Usage          agent.Usage `json:"usage"`
+	Error          string      `json:"error,omitempty"`
+	Continuation   bool        `json:"continuation"`
+	StopRequested  bool        `json:"stop_requested"`
+	StopReason     string      `json:"stop_reason,omitempty"`
+	EventCount     int         `json:"event_count"`
+}
+
+// RunHistoryDetail is the detailed history payload for one completed run.
+type RunHistoryDetail struct {
+	Run    RunHistorySnapshot `json:"run"`
+	Events []RunEventSnapshot `json:"events"`
 }
 
 type RefreshResponse struct {
@@ -156,16 +218,17 @@ func New(opts Options) *Controller {
 	}
 	now := time.Now().UTC()
 	return &Controller{
-		logger:    logger,
-		workflow:  opts.Workflow,
-		cfg:       opts.Config,
-		tracker:   opts.Tracker,
-		workspace: opts.Workspace,
-		runner:    opts.Runner,
-		startedAt: now,
-		running:   map[string]*runningEntry{},
-		claimed:   map[string]struct{}{},
-		retries:   map[string]*retryEntry{},
+		logger:      logger,
+		workflow:    opts.Workflow,
+		cfg:         opts.Config,
+		tracker:     opts.Tracker,
+		workspace:   opts.Workspace,
+		runner:      opts.Runner,
+		startedAt:   now,
+		running:     map[string]*runningEntry{},
+		claimed:     map[string]struct{}{},
+		retries:     map[string]*retryEntry{},
+		historyByID: map[string]*historyEntry{},
 	}
 }
 
@@ -239,9 +302,11 @@ func (controller *Controller) Snapshot() Snapshot {
 	for issueID, entry := range controller.running {
 		runtimeSeconds := int(now.Sub(entry.StartedAt).Seconds())
 		running = append(running, RunningSnapshot{
+			RunID:          entry.RunID,
 			IssueID:        issueID,
 			Identifier:     entry.Identifier,
 			State:          entry.Issue.State,
+			Title:          entry.Issue.Title,
 			WorkspacePath:  entry.WorkspacePath,
 			SessionID:      entry.SessionID,
 			CodexPID:       entry.CodexPID,
@@ -255,6 +320,7 @@ func (controller *Controller) Snapshot() Snapshot {
 			Usage:          entry.Usage,
 			StopRequested:  entry.StopRequested,
 			StopReason:     entry.StopReason,
+			EventCount:     len(entry.Events),
 		})
 	}
 	retrying := make([]RetryingSnapshot, 0, len(controller.retries))
@@ -288,6 +354,7 @@ func (controller *Controller) Snapshot() Snapshot {
 		Polling:  PollingSnapshot{Checking: controller.pollInProgress, PollIntervalMs: controller.cfg.Orchestrator.PollIntervalMs, NextPollAt: controller.nextPollAt, LastPollAt: controller.lastPollAt, LastError: controller.lastError},
 		Running:  running,
 		Retrying: retrying,
+		History:  controller.historySnapshotsLocked(maxSnapshotHistoryEntries),
 	}
 }
 
@@ -298,9 +365,11 @@ func (controller *Controller) IssueSnapshot(identifier string) (RunningSnapshot,
 		if entry.Identifier == identifier || issueID == identifier {
 			now := time.Now().UTC()
 			return RunningSnapshot{
+				RunID:          entry.RunID,
 				IssueID:        issueID,
 				Identifier:     entry.Identifier,
 				State:          entry.Issue.State,
+				Title:          entry.Issue.Title,
 				WorkspacePath:  entry.WorkspacePath,
 				SessionID:      entry.SessionID,
 				CodexPID:       entry.CodexPID,
@@ -314,10 +383,27 @@ func (controller *Controller) IssueSnapshot(identifier string) (RunningSnapshot,
 				Usage:          entry.Usage,
 				StopRequested:  entry.StopRequested,
 				StopReason:     entry.StopReason,
+				EventCount:     len(entry.Events),
 			}, true
 		}
 	}
 	return RunningSnapshot{}, false
+}
+
+func (controller *Controller) History() []RunHistorySnapshot {
+	controller.mu.RLock()
+	defer controller.mu.RUnlock()
+	return controller.historySnapshotsLocked(maxRunHistoryEntries)
+}
+
+func (controller *Controller) RunHistory(runID string) (RunHistoryDetail, bool) {
+	controller.mu.RLock()
+	defer controller.mu.RUnlock()
+	entry := controller.historyByID[strings.TrimSpace(runID)]
+	if entry == nil {
+		return RunHistoryDetail{}, false
+	}
+	return RunHistoryDetail{Run: entry.Run, Events: cloneRunEvents(entry.Events)}, true
 }
 
 func (controller *Controller) triggerPoll(reason string) bool {
@@ -404,6 +490,7 @@ func (controller *Controller) reconcileRunningIssues(ctx context.Context) error 
 		issue, ok := stateByID[issueID]
 		if ok {
 			entry.Issue = issue
+			entry.Identifier = issue.Identifier
 		}
 		if ok && controller.cfg.IsTerminalState(issue.State) && !entry.StopRequested {
 			entry.StopRequested = true
@@ -441,8 +528,10 @@ func (controller *Controller) canDispatch(issue domain.Issue) bool {
 
 func (controller *Controller) startIssueRun(ctx context.Context, issue domain.Issue, attempt int) {
 	runCtx, cancel := context.WithCancel(ctx)
-	entry := &runningEntry{Issue: issue, Identifier: issue.Identifier, WorkspacePath: workspacePathForIssue(controller.cfg.Workspace.Root, issue.Identifier), StartedAt: time.Now().UTC(), RetryAttempt: attempt, Cancel: cancel}
+	startedAt := time.Now().UTC()
 	controller.mu.Lock()
+	runID := controller.nextRunIDLocked(issue.Identifier, startedAt)
+	entry := &runningEntry{RunID: runID, Issue: issue, Identifier: issue.Identifier, WorkspacePath: workspacePathForIssue(controller.cfg.Workspace.Root, issue.Identifier), StartedAt: startedAt, RetryAttempt: attempt, Cancel: cancel}
 	controller.running[issue.ID] = entry
 	controller.mu.Unlock()
 	go func() {
@@ -465,6 +554,7 @@ func (controller *Controller) onAgentEvent(issueID string, event agent.Event) {
 	entry.Usage = event.Usage
 	entry.SessionID = event.SessionID
 	entry.CodexPID = event.CodexAppServerPID
+	entry.Events = appendRunEvent(entry.Events, runEventSnapshotFromAgent(event))
 	if event.Type == "session_started" {
 		entry.Turns++
 	}
@@ -475,9 +565,13 @@ func (controller *Controller) onAgentEvent(issueID string, event agent.Event) {
 }
 
 func (controller *Controller) onRunFinished(issue domain.Issue, result runner.Result, err error) {
+	finishedAt := time.Now().UTC()
 	controller.mu.Lock()
 	entry := controller.running[issue.ID]
 	delete(controller.running, issue.ID)
+	if entry != nil {
+		controller.appendHistoryLocked(buildRunHistorySnapshot(entry, result, err, finishedAt), entry.Events)
+	}
 	controller.mu.Unlock()
 	if entry == nil {
 		return
@@ -592,7 +686,132 @@ func maxInt64(left int64, right int64) int64 {
 	return right
 }
 
+func buildRunHistorySnapshot(entry *runningEntry, result runner.Result, err error, finishedAt time.Time) RunHistorySnapshot {
+	turns := entry.Turns
+	if result.Turns > turns {
+		turns = result.Turns
+	}
+	workspacePath := entry.WorkspacePath
+	if workspacePath == "" {
+		workspacePath = result.WorkspacePath
+	}
+	status := runStatus(entry.StopRequested, entry.StopReason, result.Continuation, err)
+	runtimeSeconds := int(finishedAt.Sub(entry.StartedAt).Seconds())
+	message := entry.LastMessage
+	if message == "" && err != nil {
+		message = err.Error()
+	}
+	history := RunHistorySnapshot{
+		RunID:          entry.RunID,
+		IssueID:        entry.Issue.ID,
+		Identifier:     entry.Identifier,
+		Title:          entry.Issue.Title,
+		State:          entry.Issue.State,
+		Status:         status,
+		WorkspacePath:  workspacePath,
+		SessionID:      entry.SessionID,
+		CodexPID:       entry.CodexPID,
+		Turns:          turns,
+		RetryAttempt:   entry.RetryAttempt,
+		StartedAt:      entry.StartedAt,
+		FinishedAt:     finishedAt,
+		RuntimeSeconds: runtimeSeconds,
+		LastEvent:      entry.LastEvent,
+		LastMessage:    message,
+		LastTimestamp:  entry.LastTimestamp,
+		Usage:          entry.Usage,
+		Continuation:   result.Continuation,
+		StopRequested:  entry.StopRequested,
+		StopReason:     entry.StopReason,
+		EventCount:     len(entry.Events),
+	}
+	if err != nil {
+		history.Error = err.Error()
+	}
+	return history
+}
+
+func runStatus(stopRequested bool, stopReason string, continuation bool, err error) string {
+	switch {
+	case stopRequested && stopReason == "terminal_state":
+		return "stopped_terminal"
+	case stopRequested:
+		return "stopped"
+	case err != nil:
+		return "failed"
+	case continuation:
+		return "continued"
+	default:
+		return "succeeded"
+	}
+}
+
+func runEventSnapshotFromAgent(event agent.Event) RunEventSnapshot {
+	return RunEventSnapshot{
+		Timestamp:         event.Timestamp,
+		Type:              event.Type,
+		SessionID:         event.SessionID,
+		ThreadID:          event.ThreadID,
+		TurnID:            event.TurnID,
+		CodexAppServerPID: event.CodexAppServerPID,
+		Message:           event.Message,
+		Usage:             event.Usage,
+	}
+}
+
+func appendRunEvent(events []RunEventSnapshot, event RunEventSnapshot) []RunEventSnapshot {
+	events = append(events, event)
+	if len(events) <= maxRunEventsPerRun {
+		return events
+	}
+	copy(events, events[len(events)-maxRunEventsPerRun:])
+	return events[:maxRunEventsPerRun]
+}
+
+func (controller *Controller) historySnapshotsLocked(limit int) []RunHistorySnapshot {
+	if limit <= 0 || limit > len(controller.history) {
+		limit = len(controller.history)
+	}
+	history := make([]RunHistorySnapshot, 0, limit)
+	for _, entry := range controller.history[:limit] {
+		history = append(history, entry.Run)
+	}
+	return history
+}
+
+func (controller *Controller) appendHistoryLocked(run RunHistorySnapshot, events []RunEventSnapshot) {
+	entry := &historyEntry{Run: run, Events: cloneRunEvents(events)}
+	controller.history = append([]*historyEntry{entry}, controller.history...)
+	controller.historyByID[run.RunID] = entry
+	if len(controller.history) <= maxRunHistoryEntries {
+		return
+	}
+	trimmed := controller.history[maxRunHistoryEntries:]
+	controller.history = controller.history[:maxRunHistoryEntries]
+	for _, old := range trimmed {
+		delete(controller.historyByID, old.Run.RunID)
+	}
+}
+
+func cloneRunEvents(events []RunEventSnapshot) []RunEventSnapshot {
+	if len(events) == 0 {
+		return nil
+	}
+	cloned := make([]RunEventSnapshot, len(events))
+	copy(cloned, events)
+	return cloned
+}
+
+func (controller *Controller) nextRunIDLocked(identifier string, startedAt time.Time) string {
+	controller.nextRunSeq++
+	return fmt.Sprintf("%s-%s-%03d", startedAt.Format("20060102T150405Z"), safeIdentifierValue(identifier), controller.nextRunSeq)
+}
+
 func workspacePathForIssue(root string, identifier string) string {
+	return filepath.Join(root, safeIdentifierValue(identifier))
+}
+
+func safeIdentifierValue(identifier string) string {
 	builder := strings.Builder{}
 	trimmed := strings.TrimSpace(identifier)
 	if trimmed == "" {
@@ -612,5 +831,5 @@ func workspacePathForIssue(root string, identifier string) string {
 			builder.WriteRune('_')
 		}
 	}
-	return filepath.Join(root, builder.String())
+	return builder.String()
 }

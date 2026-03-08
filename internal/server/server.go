@@ -36,8 +36,12 @@ func New(opts Options) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.handleHealthz)
 	mux.HandleFunc("/events", server.handleEvents)
+	mux.HandleFunc("/history", server.handleHistoryPage)
+	mux.HandleFunc("/history/", server.handleRunHistoryPage)
 	mux.HandleFunc("/issues/", server.handleIssuePage)
 	mux.HandleFunc("/api/v1/state", server.handleState)
+	mux.HandleFunc("/api/v1/history", server.handleHistory)
+	mux.HandleFunc("/api/v1/history/", server.handleRunHistory)
 	mux.HandleFunc("/api/v1/refresh", server.handleRefresh)
 	mux.HandleFunc("/api/v1/issues/", server.handleIssue)
 	mux.HandleFunc("/api/v1/webhooks/jira", server.handleJiraWebhook)
@@ -73,6 +77,40 @@ func (server *Server) handleState(writer http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	server.writeJSON(writer, http.StatusOK, server.controller.Snapshot())
+}
+
+func (server *Server) handleHistory(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if server.controller == nil {
+		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, map[string]any{"runs": server.controller.History()})
+}
+
+func (server *Server) handleRunHistory(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		server.writeError(writer, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if server.controller == nil {
+		server.writeError(writer, http.StatusServiceUnavailable, "controller unavailable")
+		return
+	}
+	runID := strings.TrimSpace(strings.TrimPrefix(request.URL.Path, "/api/v1/history/"))
+	if runID == "" {
+		server.writeError(writer, http.StatusBadRequest, "missing run identifier")
+		return
+	}
+	detail, ok := server.controller.RunHistory(runID)
+	if !ok {
+		server.writeError(writer, http.StatusNotFound, "run not found")
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, detail)
 }
 
 func (server *Server) handleRefresh(writer http.ResponseWriter, request *http.Request) {

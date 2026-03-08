@@ -10,6 +10,7 @@ It is designed for teams or individual builders who want an agent orchestration 
 - keeps work moving with retries and continuation turns
 - exposes runtime state through a simple HTTP API
 - includes a live HTML dashboard with SSE updates
+- keeps recent run history and sanitized event logs in memory
 
 This project is **not** an official OpenAI implementation.
 
@@ -24,7 +25,7 @@ The current version is a functional self-hosted Jira-first runtime with:
 - isolated per-issue workspaces and lifecycle hooks
 - `codex app-server` integration over stdio
 - dynamic `jira_api` tool support for agent turns
-- retries, continuation scheduling, terminal-state cleanup, and JSON status APIs
+- retries, continuation scheduling, terminal-state cleanup, JSON status APIs, and run history pages
 
 ## Quickstart
 
@@ -87,8 +88,12 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 ## HTTP API
 
 - `GET /` — live HTML dashboard
+- `GET /history` — recent completed runs page
+- `GET /history/{runID}` — run detail and event log page
 - `GET /healthz` — health probe
-- `GET /api/v1/state` — full runtime snapshot
+- `GET /api/v1/state` — full runtime snapshot, including recent run summaries
+- `GET /api/v1/history` — recent completed run summaries
+- `GET /api/v1/history/{runID}` — one run detail with sanitized event log
 - `POST /api/v1/refresh` — queue a poll/reconcile cycle
 - `GET /issues/{identifier}` — issue detail page
 - `GET /api/v1/issues/{identifier}` — running issue details
@@ -136,8 +141,8 @@ curl http://127.0.0.1:8080/api/v1/state
 - `internal/workspace` — workspace lifecycle and safety checks
 - `internal/agent/codexappserver` — Codex app-server client
 - `internal/runner` — one-issue execution loop
-- `internal/orchestrator` — scheduling, retries, reconciliation, state
-- `internal/server` — HTTP API, HTML dashboard, SSE, and webhook handling
+- `internal/orchestrator` — scheduling, retries, reconciliation, state, and in-memory run history
+- `internal/server` — HTTP API, dashboard, history pages, SSE, and webhook handling
 - `docs/` — architecture and operational docs
 
 ## Docs

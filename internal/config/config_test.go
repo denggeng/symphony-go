@@ -72,3 +72,33 @@ func TestFromWorkflowRejectsPartialServerAuth(t *testing.T) {
 		t.Fatalf("expected validation error")
 	}
 }
+
+func TestFromWorkflowAppliesLocalDefaults(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{"tracker": map[string]any{"kind": "local"}}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if cfg.Local.InboxDir == "" || cfg.Local.StateDir == "" || cfg.Local.ArchiveDir == "" || cfg.Local.ResultsDir == "" {
+		t.Fatalf("expected local directories to be defaulted: %#v", cfg.Local)
+	}
+	if !cfg.IsActiveState("To Do") || !cfg.IsTerminalState("Done") {
+		t.Fatalf("expected local state defaults to be active/terminal")
+	}
+	summary := cfg.Summary()
+	if summary.Tracker.Kind != "local" {
+		t.Fatalf("expected local tracker summary")
+	}
+	if summary.Local == nil || summary.Local.InboxDir == "" || summary.Local.ResultsDir == "" {
+		t.Fatalf("expected local summary directories: %#v", summary.Local)
+	}
+}
+
+func TestFromWorkflowRejectsMissingExpandedWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{"workspace": map[string]any{"root": "$SYMPHONY_MISSING_WORKSPACE_ROOT"}}}
+	if _, err := FromWorkflow(definition); err == nil {
+		t.Fatalf("expected validation error for missing expanded workspace root")
+	}
+}

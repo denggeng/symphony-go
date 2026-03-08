@@ -454,7 +454,7 @@ func (controller *Controller) runPollCycle(reason string) {
 }
 
 func (controller *Controller) cleanupStartup(ctx context.Context) {
-	issues, err := controller.tracker.FetchIssuesByStates(ctx, controller.cfg.Tracker.TerminalStates)
+	issues, err := controller.tracker.FetchIssuesByStates(ctx, controller.cfg.TerminalStates())
 	if err != nil {
 		controller.logger.Warn("startup cleanup skipped", slog.Any("error", err))
 		return

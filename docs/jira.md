@@ -7,6 +7,8 @@
 - comment creation
 - state transition by target status name
 - raw `jira_api` tool calls from Codex app-server turns
+- plain-text comment creation through `jira_comment`
+- issue state transitions through `jira_transition`
 - webhook-triggered refreshes through `/api/v1/webhooks/jira`
 
 ## Required config

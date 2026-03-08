@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/denggeng/symphony-go/internal/domain"
@@ -22,5 +23,14 @@ func TestContinuationPrompt(t *testing.T) {
 	text := ContinuationPrompt(2, 5)
 	if text == "" {
 		t.Fatalf("expected continuation prompt")
+	}
+}
+
+func TestRendererUsesDefaultPromptTemplate(t *testing.T) {
+	t.Parallel()
+	renderer := New(workflow.Definition{})
+	text := renderer.Render(domain.Issue{Identifier: "task-1", Title: "Local task", State: "To Do", Description: "Implement it."}, 1)
+	if !strings.Contains(text, "tracked task") || !strings.Contains(text, "State: To Do") {
+		t.Fatalf("unexpected default prompt: %q", text)
 	}
 }

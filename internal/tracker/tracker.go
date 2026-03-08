@@ -20,6 +20,12 @@ type RawResponse struct {
 	RawBody    string `json:"raw_body,omitempty"`
 }
 
+// TaskUpdate describes the final state and handoff summary for a tracked task.
+type TaskUpdate struct {
+	State   string `json:"state"`
+	Summary string `json:"summary,omitempty"`
+}
+
 type Tracker interface {
 	Kind() string
 	FetchCandidateIssues(ctx context.Context) ([]domain.Issue, error)
@@ -28,4 +34,9 @@ type Tracker interface {
 	CreateComment(ctx context.Context, issueIdentifier string, body string) error
 	UpdateIssueState(ctx context.Context, issueIdentifier string, stateName string) error
 	RawAPI(ctx context.Context, request RawRequest) (RawResponse, error)
+}
+
+// TaskUpdater is implemented by trackers that can close the loop on a task.
+type TaskUpdater interface {
+	UpdateTask(ctx context.Context, issueIdentifier string, update TaskUpdate) error
 }

@@ -217,7 +217,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         <div>
           <h1 class="headline">symphony-go dashboard</h1>
           <div class="subtle">
-            Self-hosted Jira + Codex orchestration runtime.
+            Self-hosted task + Codex orchestration runtime.
             <span class="dashboard-view">Live snapshot of polling, running issues, and retries.</span>
             <span class="issue-view">Focused view for one running issue.</span>
           </div>
@@ -246,7 +246,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         <article class="card">
           <h2>Tracker</h2>
           <div id="metric-tracker" class="metric">—</div>
-          <div id="metric-project" class="muted">Project —</div>
+          <div id="metric-project" class="muted">Scope —</div>
         </article>
         <article class="card">
           <h2>Poll Interval</h2>
@@ -272,7 +272,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           <h2>Config Summary</h2>
           <dl class="kv">
             <dt>Workspace Root</dt><dd id="config-workspace">—</dd>
-            <dt>Tracker JQL</dt><dd id="config-jql">—</dd>
+            <dt>Tracker Query / Inbox</dt><dd id="config-jql">—</dd>
             <dt>Active States</dt><dd id="config-active-states">—</dd>
             <dt>Terminal States</dt><dd id="config-terminal-states">—</dd>
             <dt>Max Agents</dt><dd id="config-max-agents">—</dd>
@@ -438,8 +438,11 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
         setText('metric-running', String(running.length));
         setText('metric-retrying', String(retrying.length));
-        setText('metric-tracker', (config.tracker && config.tracker.kind) || '—');
-        setText('metric-project', (config.tracker && config.tracker.project_key) ? 'Project ' + config.tracker.project_key : 'Project —');
+        const trackerKind = (config.tracker && config.tracker.kind) || '';
+        const localConfig = config.local || {};
+
+        setText('metric-tracker', trackerKind || '—');
+        setText('metric-project', trackerKind === 'local' ? 'Local tasks' : ((config.tracker && config.tracker.project_key) ? 'Project ' + config.tracker.project_key : 'Project —'));
         setText('metric-poll-interval', formatMs(polling.poll_interval_ms));
         setText('metric-next-poll', 'Next poll ' + formatTime(polling.next_poll_at));
 
@@ -452,7 +455,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setText('runtime-next-poll', formatTime(polling.next_poll_at));
 
         setText('config-workspace', config.workspace ? config.workspace.root : '—');
-        setText('config-jql', config.tracker ? (config.tracker.jql || '—') : '—');
+        setText('config-jql', trackerKind === 'local' ? (localConfig.inbox_dir || '—') : (config.tracker ? (config.tracker.jql || '—') : '—'));
         setText('config-active-states', config.tracker ? (config.tracker.active_states || []).join(', ') : '—');
         setText('config-terminal-states', config.tracker ? (config.tracker.terminal_states || []).join(', ') : '—');
         setText('config-max-agents', config.orchestrator ? String(config.orchestrator.max_concurrent_agents ?? '—') : '—');

@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/denggeng/symphony-go/internal/agent/codexappserver"
 	"github.com/denggeng/symphony-go/internal/config"
+	"github.com/denggeng/symphony-go/internal/envfile"
 	"github.com/denggeng/symphony-go/internal/orchestrator"
 	"github.com/denggeng/symphony-go/internal/prompt"
 	"github.com/denggeng/symphony-go/internal/runner"
@@ -22,6 +24,7 @@ import (
 	"github.com/denggeng/symphony-go/internal/tools"
 	"github.com/denggeng/symphony-go/internal/tracker"
 	jira "github.com/denggeng/symphony-go/internal/tracker/jira"
+	localtracker "github.com/denggeng/symphony-go/internal/tracker/local"
 	"github.com/denggeng/symphony-go/internal/workflow"
 	"github.com/denggeng/symphony-go/internal/workspace"
 )
@@ -39,6 +42,9 @@ func run() error {
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: parseLevel(*logLevel)}))
+	if err := envfile.LoadIfExists(filepath.Join(filepath.Dir(*workflowPath), ".env")); err != nil {
+		return err
+	}
 	loadedWorkflow, err := workflow.Load(*workflowPath)
 	if err != nil {
 		return err
@@ -52,6 +58,8 @@ func run() error {
 	switch runtimeConfig.Tracker.Kind {
 	case "jira":
 		issueTracker = jira.New(runtimeConfig, logger)
+	case "local":
+		issueTracker = localtracker.New(runtimeConfig, logger)
 	default:
 		return fmt.Errorf("unsupported tracker kind: %s", runtimeConfig.Tracker.Kind)
 	}

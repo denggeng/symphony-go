@@ -13,6 +13,7 @@ import (
 
 type Config struct {
 	Tracker      TrackerConfig      `yaml:"tracker" json:"tracker"`
+	Local        LocalConfig        `yaml:"local" json:"local,omitempty"`
 	Orchestrator OrchestratorConfig `yaml:"orchestrator" json:"orchestrator"`
 	Workspace    WorkspaceConfig    `yaml:"workspace" json:"workspace"`
 	Hooks        HooksConfig        `yaml:"hooks" json:"hooks"`
@@ -32,6 +33,16 @@ type TrackerConfig struct {
 	ActiveStates   []string `yaml:"active_states" json:"active_states,omitempty"`
 	TerminalStates []string `yaml:"terminal_states" json:"terminal_states,omitempty"`
 	WebhookSecret  string   `yaml:"webhook_secret" json:"-"`
+}
+
+// LocalConfig controls local Markdown task discovery and result storage.
+type LocalConfig struct {
+	InboxDir       string   `yaml:"inbox_dir" json:"inbox_dir,omitempty"`
+	StateDir       string   `yaml:"state_dir" json:"state_dir,omitempty"`
+	ArchiveDir     string   `yaml:"archive_dir" json:"archive_dir,omitempty"`
+	ResultsDir     string   `yaml:"results_dir" json:"results_dir,omitempty"`
+	ActiveStates   []string `yaml:"active_states" json:"active_states,omitempty"`
+	TerminalStates []string `yaml:"terminal_states" json:"terminal_states,omitempty"`
 }
 
 type OrchestratorConfig struct {
@@ -75,6 +86,7 @@ type ServerConfig struct {
 
 type Summary struct {
 	Tracker      TrackerSummary      `json:"tracker"`
+	Local        *LocalSummary       `json:"local,omitempty"`
 	Orchestrator OrchestratorSummary `json:"orchestrator"`
 	Workspace    WorkspaceSummary    `json:"workspace"`
 	Hooks        HooksSummary        `json:"hooks"`
@@ -93,6 +105,14 @@ type TrackerSummary struct {
 	TerminalStates []string `json:"terminal_states,omitempty"`
 	HasCredentials bool     `json:"has_credentials"`
 	HasWebhookAuth bool     `json:"has_webhook_auth"`
+}
+
+// LocalSummary describes the local task directories exposed in runtime state.
+type LocalSummary struct {
+	InboxDir   string `json:"inbox_dir,omitempty"`
+	StateDir   string `json:"state_dir,omitempty"`
+	ArchiveDir string `json:"archive_dir,omitempty"`
+	ResultsDir string `json:"results_dir,omitempty"`
 }
 
 type OrchestratorSummary struct {
@@ -158,18 +178,40 @@ func FromWorkflow(definition workflow.Definition) (Config, error) {
 }
 
 func (cfg Config) Summary() Summary {
+	baseURL := cfg.Tracker.BaseURL
+	authMode := cfg.Tracker.AuthMode
+	projectKey := cfg.Tracker.ProjectKey
+	jql := cfg.Tracker.JQL
+	hasCredentials := cfg.Tracker.APIToken != ""
+	hasWebhookAuth := cfg.Tracker.WebhookSecret != ""
+	var localSummary *LocalSummary
+	if cfg.Tracker.Kind == "local" {
+		baseURL = ""
+		authMode = ""
+		projectKey = ""
+		jql = ""
+		hasCredentials = false
+		hasWebhookAuth = false
+		localSummary = &LocalSummary{
+			InboxDir:   cfg.Local.InboxDir,
+			StateDir:   cfg.Local.StateDir,
+			ArchiveDir: cfg.Local.ArchiveDir,
+			ResultsDir: cfg.Local.ResultsDir,
+		}
+	}
 	return Summary{
 		Tracker: TrackerSummary{
 			Kind:           cfg.Tracker.Kind,
-			BaseURL:        cfg.Tracker.BaseURL,
-			AuthMode:       cfg.Tracker.AuthMode,
-			ProjectKey:     cfg.Tracker.ProjectKey,
-			JQL:            cfg.Tracker.JQL,
-			ActiveStates:   append([]string(nil), cfg.Tracker.ActiveStates...),
-			TerminalStates: append([]string(nil), cfg.Tracker.TerminalStates...),
-			HasCredentials: cfg.Tracker.APIToken != "",
-			HasWebhookAuth: cfg.Tracker.WebhookSecret != "",
+			BaseURL:        baseURL,
+			AuthMode:       authMode,
+			ProjectKey:     projectKey,
+			JQL:            jql,
+			ActiveStates:   append([]string(nil), cfg.ActiveStates()...),
+			TerminalStates: append([]string(nil), cfg.TerminalStates()...),
+			HasCredentials: hasCredentials,
+			HasWebhookAuth: hasWebhookAuth,
 		},
+		Local: localSummary,
 		Orchestrator: OrchestratorSummary{
 			PollIntervalMs:      cfg.Orchestrator.PollIntervalMs,
 			MaxConcurrentAgents: cfg.Orchestrator.MaxConcurrentAgents,
@@ -197,12 +239,28 @@ func (cfg Config) Summary() Summary {
 	}
 }
 
+// ActiveStates returns the active state list for the configured tracker kind.
+func (cfg Config) ActiveStates() []string {
+	if cfg.Tracker.Kind == "local" {
+		return append([]string(nil), cfg.Local.ActiveStates...)
+	}
+	return append([]string(nil), cfg.Tracker.ActiveStates...)
+}
+
+// TerminalStates returns the terminal state list for the configured tracker kind.
+func (cfg Config) TerminalStates() []string {
+	if cfg.Tracker.Kind == "local" {
+		return append([]string(nil), cfg.Local.TerminalStates...)
+	}
+	return append([]string(nil), cfg.Tracker.TerminalStates...)
+}
+
 func (cfg Config) ActiveStateSet() map[string]struct{} {
-	return toStateSet(cfg.Tracker.ActiveStates)
+	return toStateSet(cfg.ActiveStates())
 }
 
 func (cfg Config) TerminalStateSet() map[string]struct{} {
-	return toStateSet(cfg.Tracker.TerminalStates)
+	return toStateSet(cfg.TerminalStates())
 }
 
 func (cfg Config) IsActiveState(state string) bool {
@@ -226,11 +284,13 @@ func (cfg Config) EffectiveTurnSandboxPolicy(workspace string) map[string]any {
 	return policy
 }
 
+// DefaultPromptTemplate returns a generic fallback prompt for any tracker kind.
 func DefaultPromptTemplate() string {
-	return strings.TrimSpace(`You are working on a Jira issue.
+	return strings.TrimSpace(`You are working on a tracked task.
 
 Identifier: {{ issue.identifier }}
 Title: {{ issue.title }}
+State: {{ issue.state }}
 
 Body:
 {% if issue.description %}
@@ -244,14 +304,23 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Tracker.Kind) == "" {
 		cfg.Tracker.Kind = "jira"
 	}
-	if cfg.Tracker.ActiveStates == nil {
-		cfg.Tracker.ActiveStates = []string{"To Do", "In Progress"}
-	}
-	if cfg.Tracker.TerminalStates == nil {
-		cfg.Tracker.TerminalStates = []string{"Done", "Closed", "Cancelled", "Canceled", "Duplicate"}
-	}
-	if strings.TrimSpace(cfg.Tracker.AuthMode) == "" {
-		cfg.Tracker.AuthMode = "token"
+	if cfg.Tracker.Kind == "local" {
+		if cfg.Local.ActiveStates == nil {
+			cfg.Local.ActiveStates = []string{"To Do", "In Progress"}
+		}
+		if cfg.Local.TerminalStates == nil {
+			cfg.Local.TerminalStates = []string{"Done", "Blocked"}
+		}
+	} else {
+		if cfg.Tracker.ActiveStates == nil {
+			cfg.Tracker.ActiveStates = []string{"To Do", "In Progress"}
+		}
+		if cfg.Tracker.TerminalStates == nil {
+			cfg.Tracker.TerminalStates = []string{"Done", "Closed", "Cancelled", "Canceled", "Duplicate"}
+		}
+		if strings.TrimSpace(cfg.Tracker.AuthMode) == "" {
+			cfg.Tracker.AuthMode = "token"
+		}
 	}
 	if cfg.Orchestrator.PollIntervalMs <= 0 {
 		cfg.Orchestrator.PollIntervalMs = 30_000
@@ -264,6 +333,18 @@ func applyDefaults(cfg *Config) {
 	}
 	if strings.TrimSpace(cfg.Workspace.Root) == "" {
 		cfg.Workspace.Root = filepath.Join(os.TempDir(), "symphony-workspaces")
+	}
+	if strings.TrimSpace(cfg.Local.InboxDir) == "" {
+		cfg.Local.InboxDir = filepath.Join(".", "local_tasks", "inbox")
+	}
+	if strings.TrimSpace(cfg.Local.StateDir) == "" {
+		cfg.Local.StateDir = filepath.Join(".", "local_tasks", "state")
+	}
+	if strings.TrimSpace(cfg.Local.ArchiveDir) == "" {
+		cfg.Local.ArchiveDir = filepath.Join(".", "local_tasks", "archive")
+	}
+	if strings.TrimSpace(cfg.Local.ResultsDir) == "" {
+		cfg.Local.ResultsDir = filepath.Join(".", "local_tasks", "results")
 	}
 	if cfg.Hooks.TimeoutMs <= 0 {
 		cfg.Hooks.TimeoutMs = 60_000
@@ -304,6 +385,10 @@ func expandEnvironment(cfg *Config) {
 	cfg.Tracker.ProjectKey = expandString(cfg.Tracker.ProjectKey)
 	cfg.Tracker.JQL = expandString(cfg.Tracker.JQL)
 	cfg.Tracker.WebhookSecret = expandString(cfg.Tracker.WebhookSecret)
+	cfg.Local.InboxDir = expandPath(cfg.Local.InboxDir)
+	cfg.Local.StateDir = expandPath(cfg.Local.StateDir)
+	cfg.Local.ArchiveDir = expandPath(cfg.Local.ArchiveDir)
+	cfg.Local.ResultsDir = expandPath(cfg.Local.ResultsDir)
 	cfg.Workspace.Root = expandPath(cfg.Workspace.Root)
 	cfg.Hooks.AfterCreate = expandString(cfg.Hooks.AfterCreate)
 	cfg.Hooks.BeforeRun = expandString(cfg.Hooks.BeforeRun)
@@ -319,8 +404,8 @@ func expandEnvironment(cfg *Config) {
 }
 
 func validate(cfg Config) error {
-	if cfg.Tracker.Kind != "jira" {
-		return fmt.Errorf("tracker.kind must be jira in the current implementation")
+	if cfg.Tracker.Kind != "jira" && cfg.Tracker.Kind != "local" {
+		return fmt.Errorf("tracker.kind must be jira or local")
 	}
 	if cfg.Orchestrator.PollIntervalMs <= 0 {
 		return fmt.Errorf("orchestrator.poll_interval_ms must be greater than 0")
@@ -345,6 +430,14 @@ func validate(cfg Config) error {
 	}
 	if cfg.Server.Port < 0 || cfg.Server.Port > 65_535 {
 		return fmt.Errorf("server.port must be between 0 and 65535")
+	}
+	if cfg.Tracker.Kind == "local" {
+		if strings.TrimSpace(cfg.Local.InboxDir) == "" || strings.TrimSpace(cfg.Local.StateDir) == "" || strings.TrimSpace(cfg.Local.ArchiveDir) == "" || strings.TrimSpace(cfg.Local.ResultsDir) == "" {
+			return fmt.Errorf("local task directories must not be empty")
+		}
+		if len(cfg.Local.ActiveStates) == 0 || len(cfg.Local.TerminalStates) == 0 {
+			return fmt.Errorf("local.active_states and local.terminal_states must not be empty")
+		}
 	}
 	usernameSet := strings.TrimSpace(cfg.Server.Username) != ""
 	passwordSet := strings.TrimSpace(cfg.Server.Password) != ""
@@ -379,7 +472,7 @@ func expandString(value string) string {
 func expandPath(value string) string {
 	expanded := expandString(value)
 	if expanded == "" {
-		return filepath.Join(os.TempDir(), "symphony-workspaces")
+		return ""
 	}
 	if expanded == "~" {
 		home, err := os.UserHomeDir()

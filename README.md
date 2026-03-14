@@ -63,6 +63,8 @@ Fill in at least these variables in `.env`:
 - `SOURCE_REPO_URL`
 - `SOURCE_REPO_REF`
 - `SYMPHONY_WORKSPACE_BASELINE_DIR` if later tasks should inherit completed changes
+- `SYMPHONY_CONTROL_ROOT` if you want to reuse the built-in hook script templates
+- `SOURCE_REPO_DEPTH` if you want the clone hook template to use a depth other than `1`
 
 The local task directories already have working defaults in `.env.example`:
 
@@ -72,6 +74,8 @@ The local task directories already have working defaults in `.env.example`:
 - `SYMPHONY_LOCAL_RESULTS_DIR`
 
 If `SYMPHONY_WORKSPACE_BASELINE_DIR` is set, the local example overlays that directory into newly created workspaces and syncs `Done` task changes back into it. That lets later tasks inherit the accumulated baseline without extra rsync-style hooks.
+
+If you want a reusable shell-hook version for other projects, start from `examples/WORKFLOW.local.reusable-hooks.md`. That template uses `scripts/repo-clone-after-create.sh`; set `SYMPHONY_CONTROL_ROOT` to the absolute path of this `symphony-go` checkout before you run it.
 
 Then run:
 
@@ -132,8 +136,10 @@ Main sections:
 Examples:
 
 - `examples/WORKFLOW.local.md`
+- `examples/WORKFLOW.local.reusable-hooks.md`
 - `examples/WORKFLOW.jira.md`
 - `examples/WORKFLOW.closed-loop.md`
+- `docs/configuration.md` — includes reusable hook template snippets
 
 ## CLI
 

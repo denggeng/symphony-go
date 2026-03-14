@@ -115,6 +115,37 @@ workspace:
 
 如果你只想保留 clone Hook，而不启用内建基线继承/回写，可以不设置 `SYMPHONY_WORKSPACE_BASELINE_DIR`。
 
+## 可复用 Hook 模板
+
+仓库内还提供了几份可复用的 shell Hook 模板，位于 `scripts/`：
+
+- `scripts/repo-clone-after-create.sh` —— 把 `SOURCE_REPO_URL` 克隆到新工作区，支持可选的 `SOURCE_REPO_REF` 与 `SOURCE_REPO_DEPTH`，并在存在子模块时自动初始化
+- `scripts/local-repo-sync-before-run.sh` —— 如果 `SOURCE_REPO_URL` 指向本地目录或 `file://` 路径，则在每次运行前把当前源码树 rsync 到工作区；否则直接无副作用退出
+- `scripts/local-repo-sync-after-run.sh` —— 在本地 Markdown 模式下，如果任务元数据最终状态为 `Done`（或 `SOURCE_REPO_SYNC_BACK_STATE` 指定的状态），就把工作区 rsync 回本地源码树；除非你确实需要“实时源码树同步”，否则更推荐优先使用内建 `workspace.sync_back`
+
+要使用这些模板，请把 `SYMPHONY_CONTROL_ROOT` 设为当前仓库 checkout 的绝对路径，然后在 `hooks` 里引用它们：
+
+```yaml
+hooks:
+  after_create: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/repo-clone-after-create.sh"
+  timeout_ms: 60000
+```
+
+这些本地同步脚本要求机器上安装 `rsync`，其中 `scripts/local-repo-sync-after-run.sh` 还需要 `jq` 来读取本地任务元数据。
+
+可选的本地源码树实时同步：
+
+```yaml
+hooks:
+  before_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/local-repo-sync-before-run.sh"
+  after_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/local-repo-sync-after-run.sh"
+```
+
+可以直接从 `examples/WORKFLOW.local.reusable-hooks.md` 开始复制使用。
+
 ## Jira 模式配置示例
 
 ```yaml

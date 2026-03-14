@@ -63,6 +63,8 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 - `SOURCE_REPO_URL`
 - `SOURCE_REPO_REF`
 - `SYMPHONY_WORKSPACE_BASELINE_DIR`（如果你希望后续任务继承前序任务产物）
+- `SYMPHONY_CONTROL_ROOT`（如果你想复用仓库内置的 Hook 脚本模板）
+- `SOURCE_REPO_DEPTH`（如果你想让 clone Hook 模板使用非 `1` 的深度）
 
 `.env.example` 已经提供了本地目录默认值：
 
@@ -72,6 +74,8 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 - `SYMPHONY_LOCAL_RESULTS_DIR`
 
 如果设置了 `SYMPHONY_WORKSPACE_BASELINE_DIR`，本地工作流示例会在创建新工作区后自动叠加该目录，并在任务进入 `Done` 后把改动同步回去。这样后续任务就能直接继承累计基线，而不需要额外的 rsync 风格 Hook。
+
+如果你想把这套方式复用到其他项目，可以从 `examples/WORKFLOW.local.reusable-hooks.md` 开始。这个模板使用 `scripts/repo-clone-after-create.sh`，运行前请把 `SYMPHONY_CONTROL_ROOT` 设为当前 `symphony-go` 仓库的绝对路径。
 
 运行：
 
@@ -155,8 +159,10 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 示例：
 
 - `examples/WORKFLOW.local.md`
+- `examples/WORKFLOW.local.reusable-hooks.md`
 - `examples/WORKFLOW.jira.md`
 - `examples/WORKFLOW.closed-loop.md`
+- `docs/zh-CN/configuration.md` —— 包含可复用 Hook 模板片段
 
 ## CLI
 

@@ -115,6 +115,37 @@ workspace:
 
 Leave `SYMPHONY_WORKSPACE_BASELINE_DIR` unset if you only want the clone hook and not the built-in baseline carry-over.
 
+## Reusable hook templates
+
+This repo also includes reusable shell hook templates under `scripts/`:
+
+- `scripts/repo-clone-after-create.sh` — clones `SOURCE_REPO_URL` into the new workspace, supports optional `SOURCE_REPO_REF` and `SOURCE_REPO_DEPTH`, and initializes submodules when present
+- `scripts/local-repo-sync-before-run.sh` — if `SOURCE_REPO_URL` points at a local directory or `file://` path, rsyncs the current source tree into the workspace before each run; otherwise it exits without changing anything
+- `scripts/local-repo-sync-after-run.sh` — in local Markdown mode, if task metadata ends in `Done` (or `SOURCE_REPO_SYNC_BACK_STATE`), rsyncs the workspace back into the local source tree; prefer built-in `workspace.sync_back` unless you specifically need live source-tree sync
+
+To use these templates, set `SYMPHONY_CONTROL_ROOT` to the absolute path of this checkout and reference them from `hooks`:
+
+```yaml
+hooks:
+  after_create: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/repo-clone-after-create.sh"
+  timeout_ms: 60000
+```
+
+These local sync helpers expect `rsync` to be installed, and `scripts/local-repo-sync-after-run.sh` also expects `jq` so it can read local task metadata.
+
+Optional local live-source sync:
+
+```yaml
+hooks:
+  before_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/local-repo-sync-before-run.sh"
+  after_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/local-repo-sync-after-run.sh"
+```
+
+See `examples/WORKFLOW.local.reusable-hooks.md` for a ready-to-copy local template.
+
 ## Example Jira config
 
 ```yaml

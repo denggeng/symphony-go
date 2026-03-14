@@ -46,7 +46,7 @@ Validation
 - `priority`：数字越小越先执行
 - `order`：同一 `priority` 内，数字越小越先执行
 - `depends_on`：YAML 列表或逗号分隔字符串，表示必须先完成的任务 id
-- 依赖任务只有进入成功终态（例如 `Done`）后，当前任务才会就绪
+- 依赖任务只有进入成功终态（例如 `Done` 或 `Reviewed`）后，当前任务才会就绪
 - `Blocked`、`Failed`、`Cancelled`、缺失依赖或仍处于活跃态的依赖，都会让当前任务继续等待
 - 未设置 `priority` 或 `order` 时，会回退到文件修改时间与任务 id 排序
 
@@ -65,6 +65,18 @@ depends_on:
 ---
 在 schema 与 auth bootstrap 完成后，再实现 API 路由层。
 ```
+
+## 实现 + Review 双任务模式
+
+对高风险任务，最实用的闭环方式是把实现和 Review 拆成两个 Markdown 任务：
+
+- 先创建实现任务
+- 再创建一个 `depends_on` 指向实现任务 id 的 review 任务
+- 在 review 任务正文里明确写明这是 review-only，不要改生产代码
+- 如果 review 发现问题但 review 本身已经完成，就用 `task_update(state: Reviewed, ...)` 回写，并列出建议继续拆出的后续切片
+- 只有当 review 任务本身无法继续推进时，才使用 `Blocked`
+
+这样 review 任务会在一个新的 Codex 会话里运行，本质上就是第二个 agent 复核，而不是沿用原来的实现上下文。
 
 ## 目录模型
 
@@ -155,8 +167,9 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 
 Codex 必须调用：
 
-- `task_update`，并设置 `state: Done`，表示任务完成；或
-- `task_update`，并设置 `state: Blocked`，表示任务被阻塞。
+- `task_update`，并设置 `state: Done`，表示实现类任务完成
+- `task_update`，并设置 `state: Reviewed`，表示 review / audit 类任务已经完成审查，并回写发现与后续切片
+- `task_update`，并设置 `state: Blocked`，仅表示该任务本身无法继续推进。
 
 `summary` 建议包含：
 
@@ -199,6 +212,18 @@ ls local_tasks/results/hello-endpoint
 cat local_tasks/results/hello-endpoint/summary.md
 cat local_tasks/results/hello-endpoint/metadata.json
 ```
+
+## Review 交接模式
+
+对于 review / audit 任务，一种很实用的本地模式是：
+
+- 在 workflow 的 `local.terminal_states` 中加入 `Reviewed`
+- 当 review 本身已经完成时，用 `task_update(state: Reviewed, summary: ...)` 收口，而不是用 `Blocked` 卡住整条队列
+- 把审查结论保存在 `local_tasks/results/<review-task-id>/summary.md`，以及该 review 任务同目录下的其他附加产物中
+- 把每个明确缺陷或建议拆成新的 Markdown follow-up 任务，放回 `local_tasks/inbox/`
+- 让普通实现型 Codex worker 去领取这些 follow-up 任务，并用 `Done` 或 `Blocked` 收口
+
+这样 review 结果有固定落点，依赖链不会被误伤卡死，也能明确区分“审查者负责报告”与“实现任务负责修复”。
 
 ## 当前限制
 

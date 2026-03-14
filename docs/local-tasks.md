@@ -48,7 +48,7 @@ Optional scheduling fields let you control local queue order without relying on 
 - `priority`: lower numbers run first
 - `order`: lower numbers run first within the same priority
 - `depends_on`: a YAML list or comma-separated string of task ids that must finish first
-- a dependency only becomes ready after it reaches a successful terminal state such as `Done`
+- a dependency only becomes ready after it reaches a successful terminal state such as `Done` or `Reviewed`
 - `Blocked`, `Failed`, `Cancelled`, missing, or still-active dependencies keep the task pending
 - when `priority` or `order` is omitted, sorting falls back to file modification time and task id
 
@@ -67,6 +67,18 @@ depends_on:
 ---
 Implement the API routing after schema and auth bootstrap are complete.
 ```
+
+## Implementation + review pattern
+
+A practical closed loop for higher-risk work is to split implementation and review into separate Markdown tasks:
+
+- create the implementation task first
+- create a second review task with `depends_on` pointing at the implementation task id
+- make the review task body explicit that it is review-only and should not change production code
+- if review finds issues but the review itself completed, have it finish with `task_update(state: Reviewed, ...)` and list the recommended follow-up slices
+- reserve `Blocked` for cases where the review task itself cannot proceed
+
+That review task runs in a fresh Codex session, so it acts like a second pass instead of continuing the original agent thread.
 
 ## Directory model
 
@@ -157,8 +169,9 @@ In local mode, the task is not considered finished just because files changed.
 
 Codex must call:
 
-- `task_update` with `state: Done` when the task is complete, or
-- `task_update` with `state: Blocked` when it cannot proceed
+- `task_update` with `state: Done` when an implementation task is complete
+- `task_update` with `state: Reviewed` when a review/audit task finished successfully and is reporting findings or follow-up slices
+- `task_update` with `state: Blocked` only when the task itself cannot proceed
 
 The `summary` should include:
 
@@ -201,6 +214,18 @@ ls local_tasks/results/hello-endpoint
 cat local_tasks/results/hello-endpoint/summary.md
 cat local_tasks/results/hello-endpoint/metadata.json
 ```
+
+## Review handoff pattern
+
+For review or audit tasks, a useful local pattern is:
+
+- add `Reviewed` to `local.terminal_states` in your workflow
+- have the reviewer finish with `task_update(state: Reviewed, summary: ...)` instead of `Blocked` when the review itself completed
+- keep the findings in `local_tasks/results/<review-task-id>/summary.md` plus any extra artifacts that review task writes in the same results directory
+- turn each concrete defect or recommendation into a normal follow-up Markdown task under `local_tasks/inbox/`
+- let regular implementation Codex workers pick up those follow-up tasks and close them with `Done` or `Blocked`
+
+That keeps review results durable, keeps dependencies unblocked, and makes it explicit that the reviewer reports while implementer tasks repair.
 
 ## Important current limitation
 

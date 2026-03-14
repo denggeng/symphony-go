@@ -56,6 +56,8 @@
 - 活跃态：`To Do`、`In Progress`
 - 终态：`Done`、`Blocked`
 
+如果你的队列里包含 review / audit 任务，一个常见扩展做法是在终态里额外加入 `Reviewed`。`Reviewed` 可以满足 `depends_on`，而 `Blocked` 不会。
+
 ## 本地任务文件格式
 
 本地任务是一个 Markdown 文件，可带可选 front matter。
@@ -69,7 +71,7 @@
 - `order`
 - `depends_on`
 
-如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。`priority` 与 `order` 都是可选数字字段，值越小越先执行。`depends_on` 支持 YAML 列表或逗号分隔字符串；只有当每个依赖都进入成功终态后，当前任务才会变成可调度状态。
+如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。`priority` 与 `order` 都是可选数字字段，值越小越先执行。`depends_on` 支持 YAML 列表或逗号分隔字符串；只有当每个依赖都进入成功终态（例如 `Done` 或 `Reviewed`）后，当前任务才会变成可调度状态。
 
 ## 环境变量
 
@@ -104,7 +106,7 @@ local:
   archive_dir: $SYMPHONY_LOCAL_ARCHIVE_DIR
   results_dir: $SYMPHONY_LOCAL_RESULTS_DIR
   active_states: ["To Do", "In Progress"]
-  terminal_states: ["Done", "Blocked"]
+  terminal_states: ["Done", "Reviewed", "Blocked"]
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
   seed:

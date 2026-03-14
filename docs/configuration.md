@@ -56,6 +56,8 @@ Default local state mapping is:
 - active: `To Do`, `In Progress`
 - terminal: `Done`, `Blocked`
 
+If your queue includes review or audit tasks, a common extension is to add `Reviewed` as an additional terminal state. `Reviewed` still satisfies `depends_on`, while `Blocked` does not.
+
 ## Local task file format
 
 A local task is a Markdown file with optional front matter.
@@ -69,7 +71,7 @@ Supported front matter keys:
 - `order`
 - `depends_on`
 
-If `id` is omitted, the filename stem becomes the task identifier. `priority` and `order` are optional numeric hints where lower values run first. `depends_on` accepts a YAML list or comma-separated string of task identifiers, and each dependency must reach a successful terminal state before the task becomes dispatchable.
+If `id` is omitted, the filename stem becomes the task identifier. `priority` and `order` are optional numeric hints where lower values run first. `depends_on` accepts a YAML list or comma-separated string of task identifiers, and each dependency must reach a successful terminal state such as `Done` or `Reviewed` before the task becomes dispatchable.
 
 ## Environment variables
 
@@ -104,7 +106,7 @@ local:
   archive_dir: $SYMPHONY_LOCAL_ARCHIVE_DIR
   results_dir: $SYMPHONY_LOCAL_RESULTS_DIR
   active_states: ["To Do", "In Progress"]
-  terminal_states: ["Done", "Blocked"]
+  terminal_states: ["Done", "Reviewed", "Blocked"]
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
   seed:

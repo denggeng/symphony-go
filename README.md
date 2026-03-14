@@ -91,7 +91,7 @@ A successful local run usually produces:
 - results under `local_tasks/results/<task-id>/`
 - if baseline sync is enabled, completed `Done` changes copied back to `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
-Local task front matter also supports `priority`, `order`, and `depends_on` for explicit dispatch control. The detailed local guide is in `docs/local-tasks.md`.
+Local task front matter also supports `priority`, `order`, and `depends_on` for explicit dispatch control. For review-heavy queues, add `Reviewed` as a successful terminal state so review tasks can report findings without blocking downstream work. The detailed local guide is in `docs/local-tasks.md`.
 
 ### 3. Jira mode
 

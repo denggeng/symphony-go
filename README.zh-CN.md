@@ -91,7 +91,7 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 - `local_tasks/results/<task-id>/` 下出现结果文件
 - 如果启用了基线同步，`Done` 任务的改动会回写到 `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
-本地任务 front matter 也支持 `priority`、`order`、`depends_on`，可以显式控制派发顺序。详细说明见 `docs/zh-CN/local-tasks.md`。
+本地任务 front matter 也支持 `priority`、`order`、`depends_on`，可以显式控制派发顺序。对于 review 比较多的队列，建议把 `Reviewed` 也加入成功终态，让 review 任务能回写发现而不阻塞后续工作。详细说明见 `docs/zh-CN/local-tasks.md`。
 
 ### 3. Jira 模式
 

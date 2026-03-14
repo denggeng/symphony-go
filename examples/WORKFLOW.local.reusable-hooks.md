@@ -11,6 +11,7 @@ local:
     - In Progress
   terminal_states:
     - Done
+    - Reviewed
     - Blocked
 orchestrator:
   poll_interval_ms: 30000
@@ -62,10 +63,13 @@ Operating rules:
 - Work only inside the current workspace and cloned repository.
 - Make the smallest useful change that satisfies the task.
 - Run targeted validation before you stop.
-- When you finish successfully, call `task_update` on {{ issue.identifier }} with:
+- When you finish a build/implementation task successfully, call `task_update` on {{ issue.identifier }} with:
   - `state`: `Done`
   - `summary`: a concise handoff covering what changed, validation, and any follow-up notes
-- If you are blocked, call `task_update` on {{ issue.identifier }} with:
+- When you finish a review/audit task successfully, prefer `task_update` with:
+  - `state`: `Reviewed`
+  - `summary`: what you reviewed, what validation ran, the defects or risks you found, and the recommended follow-up slices
+- If you are blocked because the task itself cannot be completed, call `task_update` on {{ issue.identifier }} with:
   - `state`: `Blocked`
   - `summary`: what blocked you, what you tried, and what should happen next
 - Do not push, merge, or open a PR unless the task explicitly asks for it and the environment already has working git credentials.

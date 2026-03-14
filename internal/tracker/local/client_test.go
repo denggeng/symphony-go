@@ -46,6 +46,12 @@ func issueIdentifiers(issues []domain.Issue) []string {
 	return identifiers
 }
 
+func testConfigWithReviewed(root string) config.Config {
+	cfg := testConfig(root)
+	cfg.Local.TerminalStates = []string{"Done", "Reviewed", "Blocked"}
+	return cfg
+}
+
 func TestFetchCandidateIssuesReadsInboxMarkdown(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -166,6 +172,38 @@ Build the API after the database task is complete.
 	}
 	if got, want := issueIdentifiers(issues), []string{"api"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected ready issue set after dependency completion: got %v want %v", got, want)
+	}
+}
+
+func TestFetchCandidateIssuesTreatsReviewedDependenciesAsSatisfied(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfigWithReviewed(root), slog.Default())
+
+	writeTaskFile(t, filepath.Join(root, "inbox", "review.md"), `---
+id: review
+state: To Do
+---
+Review the provider wiring.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "fix.md"), `---
+id: fix
+state: To Do
+depends_on: review
+---
+Apply the follow-up implementation after review is complete.
+`)
+
+	if err := client.UpdateTask(context.Background(), "review", tracker.TaskUpdate{State: "Reviewed", Summary: "Review complete with follow-up notes."}); err != nil {
+		t.Fatalf("mark dependency reviewed: %v", err)
+	}
+
+	issues, err := client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues after reviewed dependency: %v", err)
+	}
+	if got, want := issueIdentifiers(issues), []string{"fix"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected ready issue set after reviewed dependency: got %v want %v", got, want)
 	}
 }
 

@@ -46,9 +46,10 @@ type LocalConfig struct {
 }
 
 type OrchestratorConfig struct {
-	PollIntervalMs      int `yaml:"poll_interval_ms" json:"poll_interval_ms"`
-	MaxConcurrentAgents int `yaml:"max_concurrent_agents" json:"max_concurrent_agents"`
-	MaxRetryBackoffMs   int `yaml:"max_retry_backoff_ms" json:"max_retry_backoff_ms"`
+	PollIntervalMs      int            `yaml:"poll_interval_ms" json:"poll_interval_ms"`
+	MaxConcurrentAgents int            `yaml:"max_concurrent_agents" json:"max_concurrent_agents"`
+	MaxRetryBackoffMs   int            `yaml:"max_retry_backoff_ms" json:"max_retry_backoff_ms"`
+	ConcurrencyLimits   map[string]int `yaml:"concurrency_limits" json:"concurrency_limits,omitempty"`
 }
 
 type WorkspaceConfig struct {
@@ -131,9 +132,10 @@ type LocalSummary struct {
 }
 
 type OrchestratorSummary struct {
-	PollIntervalMs      int `json:"poll_interval_ms"`
-	MaxConcurrentAgents int `json:"max_concurrent_agents"`
-	MaxRetryBackoffMs   int `json:"max_retry_backoff_ms"`
+	PollIntervalMs      int            `json:"poll_interval_ms"`
+	MaxConcurrentAgents int            `json:"max_concurrent_agents"`
+	MaxRetryBackoffMs   int            `json:"max_retry_backoff_ms"`
+	ConcurrencyLimits   map[string]int `json:"concurrency_limits,omitempty"`
 }
 
 type WorkspaceSummary struct {
@@ -258,6 +260,7 @@ func (cfg Config) Summary() Summary {
 			PollIntervalMs:      cfg.Orchestrator.PollIntervalMs,
 			MaxConcurrentAgents: cfg.Orchestrator.MaxConcurrentAgents,
 			MaxRetryBackoffMs:   cfg.Orchestrator.MaxRetryBackoffMs,
+			ConcurrencyLimits:   cloneIntMap(cfg.Orchestrator.ConcurrencyLimits),
 		},
 		Workspace: WorkspaceSummary{Root: cfg.Workspace.Root, Seed: seedSummary, SyncBack: syncBackSummary},
 		Hooks: HooksSummary{
@@ -387,6 +390,7 @@ func applyDefaults(cfg *Config) {
 	if cfg.Orchestrator.MaxRetryBackoffMs <= 0 {
 		cfg.Orchestrator.MaxRetryBackoffMs = 300_000
 	}
+	cfg.Orchestrator.ConcurrencyLimits = normalizeConcurrencyLimits(cfg.Orchestrator.ConcurrencyLimits)
 	if strings.TrimSpace(cfg.Workspace.Root) == "" {
 		cfg.Workspace.Root = filepath.Join(os.TempDir(), "symphony-workspaces")
 	}
@@ -486,6 +490,14 @@ func validate(cfg Config) error {
 	if cfg.Orchestrator.MaxRetryBackoffMs <= 0 {
 		return fmt.Errorf("orchestrator.max_retry_backoff_ms must be greater than 0")
 	}
+	for lane, limit := range cfg.Orchestrator.ConcurrencyLimits {
+		if strings.TrimSpace(lane) == "" {
+			return fmt.Errorf("orchestrator.concurrency_limits keys must not be empty")
+		}
+		if limit <= 0 {
+			return fmt.Errorf("orchestrator.concurrency_limits.%s must be greater than 0", lane)
+		}
+	}
 	if strings.TrimSpace(cfg.Workspace.Root) == "" {
 		return fmt.Errorf("workspace.root must not be empty")
 	}
@@ -521,6 +533,35 @@ func validate(cfg Config) error {
 		return fmt.Errorf("server.username and server.password must be set together")
 	}
 	return nil
+}
+
+func cloneIntMap(values map[string]int) map[string]int {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]int, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func normalizeConcurrencyLimits(values map[string]int) map[string]int {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make(map[string]int, len(values))
+	for key, value := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(key))
+		if trimmed == "" {
+			continue
+		}
+		normalized[trimmed] = value
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func toStateSet(states []string) map[string]struct{} {

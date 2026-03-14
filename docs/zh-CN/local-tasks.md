@@ -8,7 +8,7 @@
 
 - `tracker.kind: local`
 - 轮询任务收件箱中的 `*.md` 文件
-- front matter 可选字段：`id`、`title`、`state`、`priority`、`order`、`depends_on`
+- front matter 可选字段：`id`、`title`、`state`、`lane`、`review_of`、`priority`、`order`、`depends_on`
 - sidecar JSON 形式的任务状态持久化
 - 终态任务从 inbox 移动到 archive
 - 在 `local.results_dir/<task-id>/` 下写入结果文件
@@ -46,6 +46,7 @@ Validation
 - `priority`：数字越小越先执行
 - `order`：同一 `priority` 内，数字越小越先执行
 - `depends_on`：YAML 列表或逗号分隔字符串，表示必须先完成的任务 id
+- `lane`：可选并发 lane，例如 `review`；如果你想做到“一个实现 worker + 一个 reviewer 并行”，可与 `orchestrator.concurrency_limits` 搭配使用
 - 依赖任务只有进入成功终态（例如 `Done` 或 `Reviewed`）后，当前任务才会就绪
 - `Blocked`、`Failed`、`Cancelled`、缺失依赖或仍处于活跃态的依赖，都会让当前任务继续等待
 - 未设置 `priority` 或 `order` 时，会回退到文件修改时间与任务 id 排序
@@ -71,12 +72,29 @@ depends_on:
 对高风险任务，最实用的闭环方式是把实现和 Review 拆成两个 Markdown 任务：
 
 - 先创建实现任务
-- 再创建一个 `depends_on` 指向实现任务 id 的 review 任务
+- 后续实现任务默认依赖实现任务本身，而不是依赖 review 任务；只有当 review 真的是硬门禁时，才让主线依赖 review
+- 再创建一个 `depends_on` 指向实现任务 id 的 review 任务，并补上 `lane: review` 与 `review_of: <实现任务 id>`
+- 如果你想让“一个实现任务 + 一个 reviewer”并行运行，把 `orchestrator.max_concurrent_agents` 设为 `2`，并同时配置 `concurrency_limits.default: 1` 与 `concurrency_limits.review: 1`
 - 在 review 任务正文里明确写明这是 review-only，不要改生产代码
 - 如果 review 发现问题但 review 本身已经完成，就用 `task_update(state: Reviewed, ...)` 回写，并列出建议继续拆出的后续切片
 - 只有当 review 任务本身无法继续推进时，才使用 `Blocked`
 
-这样 review 任务会在一个新的 Codex 会话里运行，本质上就是第二个 agent 复核，而不是沿用原来的实现上下文。
+这样 review 任务会在一个新的 Codex 会话里运行，本质上就是第二个 agent 复核，而不是沿用原来的实现上下文。配合 `review_of` 与可复用 hook 模板，reviewer 还能在自己的工作区里直接拿到 `.symphony/review-target/` 审查包。
+
+示例 review 任务：
+
+```md
+---
+id: review-api-routing
+title: Review API routing
+state: To Do
+lane: review
+review_of: api-routing
+depends_on:
+  - api-routing
+---
+先看 `.symphony/review-target/README.md`，再验证被改动的包，并只报告缺陷，不修改生产代码。
+```
 
 ## 目录模型
 
@@ -204,6 +222,7 @@ Codex 必须调用：
 - `summary.md` — 面向人的简洁结果摘要
 - `metadata.json` — 任务状态、时间戳与摘要元数据
 - `comments.md` — 如果使用了评论能力，则保存评论内容
+- `git/` — 如果启用了 `scripts/git-review-artifacts-after-run.sh`，这里还会保存每个任务的 git 审查工件，包括 changed files、diff，以及可选的本地 workspace commit 包
 
 示例：
 
@@ -220,6 +239,8 @@ cat local_tasks/results/hello-endpoint/metadata.json
 - 在 workflow 的 `local.terminal_states` 中加入 `Reviewed`
 - 当 review 本身已经完成时，用 `task_update(state: Reviewed, summary: ...)` 收口，而不是用 `Blocked` 卡住整条队列
 - 把审查结论保存在 `local_tasks/results/<review-task-id>/summary.md`，以及该 review 任务同目录下的其他附加产物中
+- 如果你使用了 `review_of` 与 `scripts/review-target-before-run.sh`，让 reviewer 在工作区里优先查看 `.symphony/review-target/README.md`
+- 如果你使用了 `scripts/git-review-artifacts-after-run.sh`，把实现任务的改动包固化到 `local_tasks/results/<implementation-task-id>/git/`；如果希望 reviewer 审查“一次任务对应一个准确 patch”，就开启 `SYMPHONY_TASK_GIT_AUTO_COMMIT=1`
 - 把每个明确缺陷或建议拆成新的 Markdown follow-up 任务，放回 `local_tasks/inbox/`
 - 让普通实现型 Codex worker 去领取这些 follow-up 任务，并用 `Done` 或 `Blocked` 收口
 

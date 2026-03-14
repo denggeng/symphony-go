@@ -58,6 +58,20 @@
 
 如果你的队列里包含 review / audit 任务，一个常见扩展做法是在终态里额外加入 `Reviewed`。`Reviewed` 可以满足 `depends_on`，而 `Blocked` 不会。
 
+## Orchestrator 并发 lane
+
+全局并发上限用 `orchestrator.max_concurrent_agents`，如果你希望做到“一个实现 worker + 一个 reviewer 并行”，再加上 `orchestrator.concurrency_limits`：
+
+```yaml
+orchestrator:
+  max_concurrent_agents: 2
+  concurrency_limits:
+    default: 1
+    review: 1
+```
+
+本地 Markdown 任务可以在 front matter 里设置 `lane: review`，这样 review 任务会走 `review` lane，普通实现任务仍走 `default`。这样 reviewer 可以和开发并行，而不会放开多个实现型 writer 同时回写。
+
 ## 本地任务文件格式
 
 本地任务是一个 Markdown 文件，可带可选 front matter。
@@ -67,11 +81,13 @@
 - `id`
 - `title`
 - `state`
+- `lane`
+- `review_of`
 - `priority`
 - `order`
 - `depends_on`
 
-如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。`priority` 与 `order` 都是可选数字字段，值越小越先执行。`depends_on` 支持 YAML 列表或逗号分隔字符串；只有当每个依赖都进入成功终态（例如 `Done` 或 `Reviewed`）后，当前任务才会变成可调度状态。
+如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。`priority` 与 `order` 都是可选数字字段，值越小越先执行。`depends_on` 支持 YAML 列表或逗号分隔字符串；只有当每个依赖都进入成功终态（例如 `Done` 或 `Reviewed`）后，当前任务才会变成可调度状态。`lane` 可选，用来把任务路由到某个并发 lane（例如 `review`）；`review_of` 用来指向当前 review 任务要审查的实现任务 id。
 
 ## 环境变量
 
@@ -107,6 +123,11 @@ local:
   results_dir: $SYMPHONY_LOCAL_RESULTS_DIR
   active_states: ["To Do", "In Progress"]
   terminal_states: ["Done", "Reviewed", "Blocked"]
+orchestrator:
+  max_concurrent_agents: 2
+  concurrency_limits:
+    default: 1
+    review: 1
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
   seed:
@@ -122,6 +143,8 @@ workspace:
 仓库内还提供了几份可复用的 shell Hook 模板，位于 `scripts/`：
 
 - `scripts/repo-clone-after-create.sh` —— 把 `SOURCE_REPO_URL` 克隆到新工作区，支持可选的 `SOURCE_REPO_REF` 与 `SOURCE_REPO_DEPTH`，并在存在子模块时自动初始化
+- `scripts/review-target-before-run.sh` —— 当本地任务设置了 `review_of` 时，把目标任务保存下来的 review bundle 复制到 reviewer 工作区内的 `.symphony/review-target/`
+- `scripts/git-review-artifacts-after-run.sh` —— 在 `local_tasks/results/<task-id>/git/` 下导出每个任务的 git 审查工件；如果设置 `SYMPHONY_TASK_GIT_AUTO_COMMIT=1`，还会为成功实现任务创建本地 workspace commit
 - `scripts/local-repo-sync-before-run.sh` —— 如果 `SOURCE_REPO_URL` 指向本地目录或 `file://` 路径，则在每次运行前把当前源码树 rsync 到工作区；否则直接无副作用退出
 - `scripts/local-repo-sync-after-run.sh` —— 在本地 Markdown 模式下，如果任务元数据最终状态为 `Done`（或 `SOURCE_REPO_SYNC_BACK_STATE` 指定的状态），就把工作区 rsync 回本地源码树；除非你确实需要“实时源码树同步”，否则更推荐优先使用内建 `workspace.sync_back`
 
@@ -131,10 +154,14 @@ workspace:
 hooks:
   after_create: |
     "$SYMPHONY_CONTROL_ROOT/scripts/repo-clone-after-create.sh"
+  before_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/review-target-before-run.sh"
+  after_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/git-review-artifacts-after-run.sh"
   timeout_ms: 60000
 ```
 
-这些本地同步脚本要求机器上安装 `rsync`，其中 `scripts/local-repo-sync-after-run.sh` 还需要 `jq` 来读取本地任务元数据。
+这些 review 辅助脚本要求机器上安装 `git`，其中 `scripts/git-review-artifacts-after-run.sh` 还需要 `jq` 来读取本地任务元数据。如果你希望每个成功实现任务都生成一个本地 workspace commit，设置 `SYMPHONY_TASK_GIT_AUTO_COMMIT=1` 即可；`SYMPHONY_TASK_GIT_COMMIT_STATES` 默认是 `Done`。
 
 可选的本地源码树实时同步：
 

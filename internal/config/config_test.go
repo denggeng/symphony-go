@@ -95,6 +95,44 @@ func TestFromWorkflowAppliesLocalDefaults(t *testing.T) {
 	}
 }
 
+func TestFromWorkflowNormalizesConcurrencyLimits(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"orchestrator": map[string]any{
+			"max_concurrent_agents": 2,
+			"concurrency_limits":    map[string]any{" Review ": 1, "default": 1},
+		},
+	}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if got, want := cfg.Orchestrator.ConcurrencyLimits["review"], 1; got != want {
+		t.Fatalf("unexpected review concurrency limit: got %d want %d", got, want)
+	}
+	if got, want := cfg.Orchestrator.ConcurrencyLimits["default"], 1; got != want {
+		t.Fatalf("unexpected default concurrency limit: got %d want %d", got, want)
+	}
+	summary := cfg.Summary()
+	if got, want := summary.Orchestrator.ConcurrencyLimits["review"], 1; got != want {
+		t.Fatalf("unexpected summary review concurrency limit: got %d want %d", got, want)
+	}
+}
+
+func TestFromWorkflowRejectsInvalidConcurrencyLimit(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"orchestrator": map[string]any{
+			"concurrency_limits": map[string]any{"review": 0},
+		},
+	}}
+	if _, err := FromWorkflow(definition); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}
+
 func TestFromWorkflowRejectsMissingExpandedWorkspaceRoot(t *testing.T) {
 	t.Parallel()
 	definition := workflow.Definition{Config: map[string]any{"workspace": map[string]any{"root": "$SYMPHONY_MISSING_WORKSPACE_ROOT"}}}
@@ -138,13 +176,13 @@ func TestFromWorkflowExpandsWorkspaceSeedAndSyncBackPaths(t *testing.T) {
 		"tracker": map[string]any{"kind": "local"},
 		"workspace": map[string]any{
 			"seed": map[string]any{
-				"path": "$SYMPHONY_WORKSPACE_SEED_DIR",
+				"path":     "$SYMPHONY_WORKSPACE_SEED_DIR",
 				"excludes": []any{"dist"},
 			},
 			"sync_back": map[string]any{
-				"path": "$SYMPHONY_WORKSPACE_SYNC_DIR",
+				"path":      "$SYMPHONY_WORKSPACE_SYNC_DIR",
 				"on_states": []any{"Done", "Closed"},
-				"excludes": []any{"build"},
+				"excludes":  []any{"build"},
 			},
 		},
 	}}

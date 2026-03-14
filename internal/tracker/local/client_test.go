@@ -81,6 +81,34 @@ Add a /hello endpoint and test it.
 	}
 }
 
+func TestFetchCandidateIssuesReadsLaneAndReviewOf(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfig(root), slog.Default())
+	writeTaskFile(t, filepath.Join(root, "inbox", "review-api.md"), `---
+id: review-api
+state: To Do
+lane: review
+review_of: impl-api
+---
+Review the API implementation slice.
+`)
+
+	issues, err := client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("unexpected candidate count: %d", len(issues))
+	}
+	if issues[0].Lane != "review" {
+		t.Fatalf("unexpected lane: %q", issues[0].Lane)
+	}
+	if issues[0].ReviewOf != "impl-api" {
+		t.Fatalf("unexpected review_of: %q", issues[0].ReviewOf)
+	}
+}
+
 func TestFetchCandidateIssuesOrdersByPriorityThenOrder(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

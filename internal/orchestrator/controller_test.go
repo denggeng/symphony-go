@@ -30,6 +30,18 @@ func TestWorkspacePathForIssueSanitizesIdentifier(t *testing.T) {
 	}
 }
 
+func TestCanDispatchRespectsLaneConcurrencyLimits(t *testing.T) {
+	t.Parallel()
+	controller := New(Options{Config: config.Config{Orchestrator: config.OrchestratorConfig{MaxConcurrentAgents: 2, MaxRetryBackoffMs: 300_000, ConcurrencyLimits: map[string]int{"default": 1, "review": 1}}}})
+	controller.running["impl-1"] = &runningEntry{Issue: domain.Issue{ID: "impl-1", Identifier: "impl-1", Lane: "default"}}
+	if controller.canDispatch(domain.Issue{ID: "impl-2", Identifier: "impl-2", Lane: "default"}) {
+		t.Fatalf("expected second default-lane task to be held")
+	}
+	if !controller.canDispatch(domain.Issue{ID: "review-1", Identifier: "review-1", Lane: "review"}) {
+		t.Fatalf("expected review lane to dispatch alongside default lane")
+	}
+}
+
 func TestHistoryRetentionAndDetailLookup(t *testing.T) {
 	t.Parallel()
 	controller := New(Options{Config: config.Config{Orchestrator: config.OrchestratorConfig{PollIntervalMs: 30_000}}})

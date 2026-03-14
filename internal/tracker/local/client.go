@@ -55,6 +55,8 @@ type taskFrontMatter struct {
 	ID        string
 	Title     string
 	State     string
+	Lane      string
+	ReviewOf  string
 	Priority  *int
 	Order     *int
 	DependsOn []string
@@ -341,6 +343,8 @@ func (client *Client) parseTaskFile(path string, archived bool) (*taskRecord, er
 		Priority:     metadata.Priority,
 		Order:        metadata.Order,
 		State:        stateName,
+		Lane:         normalizeLane(metadata.Lane),
+		ReviewOf:     strings.TrimSpace(metadata.ReviewOf),
 		Dependencies: append([]string(nil), metadata.DependsOn...),
 		CreatedAt:    &createdAt,
 		UpdatedAt:    &updatedAt,
@@ -471,6 +475,8 @@ func decodeFrontMatter(values map[string]any) taskFrontMatter {
 	frontMatter.ID = frontMatterString(values["id"])
 	frontMatter.Title = frontMatterString(values["title"])
 	frontMatter.State = frontMatterString(values["state"])
+	frontMatter.Lane = frontMatterString(values["lane"])
+	frontMatter.ReviewOf = frontMatterString(values["review_of"])
 	frontMatter.Priority = frontMatterInt(values["priority"])
 	frontMatter.Order = frontMatterInt(values["order"])
 	frontMatter.DependsOn = normalizeIdentifiers(frontMatterStringList(values["depends_on"]))
@@ -517,6 +523,10 @@ func (client *Client) isSuccessfulDependencyState(state string) bool {
 	default:
 		return true
 	}
+}
+
+func normalizeLane(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func frontMatterString(value any) string {

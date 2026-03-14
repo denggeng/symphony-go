@@ -10,7 +10,7 @@ In local mode today:
 
 - `tracker.kind: local`
 - polling a task inbox directory for `*.md` files
-- optional front matter fields: `id`, `title`, `state`, `priority`, `order`, `depends_on`
+- optional front matter fields: `id`, `title`, `state`, `lane`, `review_of`, `priority`, `order`, `depends_on`
 - result state persisted in sidecar JSON files
 - terminal tasks moved from inbox to archive
 - result artifacts written under `local.results_dir/<task-id>/`
@@ -48,6 +48,7 @@ Optional scheduling fields let you control local queue order without relying on 
 - `priority`: lower numbers run first
 - `order`: lower numbers run first within the same priority
 - `depends_on`: a YAML list or comma-separated string of task ids that must finish first
+- `lane`: optional concurrency lane such as `review`; pair it with `orchestrator.concurrency_limits` if you want one implementation worker plus one reviewer in parallel
 - a dependency only becomes ready after it reaches a successful terminal state such as `Done` or `Reviewed`
 - `Blocked`, `Failed`, `Cancelled`, missing, or still-active dependencies keep the task pending
 - when `priority` or `order` is omitted, sorting falls back to file modification time and task id
@@ -73,12 +74,29 @@ Implement the API routing after schema and auth bootstrap are complete.
 A practical closed loop for higher-risk work is to split implementation and review into separate Markdown tasks:
 
 - create the implementation task first
-- create a second review task with `depends_on` pointing at the implementation task id
+- let the next implementation slice depend on the implementation task, not the review task, unless review is a hard release gate
+- create a second review task with `depends_on` pointing at the implementation task id, plus `lane: review` and `review_of: <implementation-task-id>`
+- set `orchestrator.max_concurrent_agents: 2` together with `concurrency_limits.default: 1` and `concurrency_limits.review: 1` if you want one implementation task and one reviewer to run side by side
 - make the review task body explicit that it is review-only and should not change production code
 - if review finds issues but the review itself completed, have it finish with `task_update(state: Reviewed, ...)` and list the recommended follow-up slices
 - reserve `Blocked` for cases where the review task itself cannot proceed
 
-That review task runs in a fresh Codex session, so it acts like a second pass instead of continuing the original agent thread.
+That review task runs in a fresh Codex session, so it acts like a second pass instead of continuing the original agent thread. With `review_of` plus the reusable hook templates, the reviewer also gets the target task's saved git bundle copied into `.symphony/review-target/` inside the review workspace.
+
+Example review task:
+
+```md
+---
+id: review-api-routing
+title: Review API routing
+state: To Do
+lane: review
+review_of: api-routing
+depends_on:
+  - api-routing
+---
+Inspect `.symphony/review-target/README.md`, validate the changed packages, and report defects without changing production code.
+```
 
 ## Directory model
 
@@ -206,6 +224,7 @@ For each local task, `symphony-go` writes:
 - `summary.md` — concise human-readable outcome
 - `metadata.json` — persisted task state, timestamps, and summary
 - `comments.md` — tracker comments, if any were written through the comment helper
+- `git/` — optional per-task review artifacts when you enable `scripts/git-review-artifacts-after-run.sh`, including changed files, diff output, and an optional local workspace commit bundle
 
 Example:
 
@@ -222,6 +241,8 @@ For review or audit tasks, a useful local pattern is:
 - add `Reviewed` to `local.terminal_states` in your workflow
 - have the reviewer finish with `task_update(state: Reviewed, summary: ...)` instead of `Blocked` when the review itself completed
 - keep the findings in `local_tasks/results/<review-task-id>/summary.md` plus any extra artifacts that review task writes in the same results directory
+- if you use `review_of` with `scripts/review-target-before-run.sh`, have the reviewer inspect `.symphony/review-target/README.md` inside the workspace as the primary review bundle
+- if you use `scripts/git-review-artifacts-after-run.sh`, store the implementation change bundle under `local_tasks/results/<implementation-task-id>/git/`; set `SYMPHONY_TASK_GIT_AUTO_COMMIT=1` if you want a local per-task commit so the reviewer can inspect one exact patch
 - turn each concrete defect or recommendation into a normal follow-up Markdown task under `local_tasks/inbox/`
 - let regular implementation Codex workers pick up those follow-up tasks and close them with `Done` or `Blocked`
 

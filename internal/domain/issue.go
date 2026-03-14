@@ -15,6 +15,8 @@ type Issue struct {
 	Priority     *int
 	Order        *int
 	State        string
+	Lane         string
+	ReviewOf     string
 	BranchName   string
 	URL          string
 	Labels       []string

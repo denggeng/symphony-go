@@ -136,6 +136,8 @@ type RunningSnapshot struct {
 	IssueID        string      `json:"issue_id"`
 	Identifier     string      `json:"identifier"`
 	State          string      `json:"state"`
+	Lane           string      `json:"lane,omitempty"`
+	ReviewOf       string      `json:"review_of,omitempty"`
 	Title          string      `json:"title,omitempty"`
 	QueueStatus    string      `json:"queue_status"`
 	Priority       *int        `json:"priority,omitempty"`
@@ -164,6 +166,8 @@ type RetryingSnapshot struct {
 	Identifier   string     `json:"identifier"`
 	Title        string     `json:"title,omitempty"`
 	State        string     `json:"state,omitempty"`
+	Lane         string     `json:"lane,omitempty"`
+	ReviewOf     string     `json:"review_of,omitempty"`
 	QueueStatus  string     `json:"queue_status"`
 	Priority     *int       `json:"priority,omitempty"`
 	Order        *int       `json:"order,omitempty"`
@@ -182,6 +186,8 @@ type BacklogSnapshot struct {
 	Identifier   string     `json:"identifier"`
 	Title        string     `json:"title,omitempty"`
 	State        string     `json:"state"`
+	Lane         string     `json:"lane,omitempty"`
+	ReviewOf     string     `json:"review_of,omitempty"`
 	QueueStatus  string     `json:"queue_status"`
 	Priority     *int       `json:"priority,omitempty"`
 	Order        *int       `json:"order,omitempty"`
@@ -195,6 +201,8 @@ type IssueDetailSnapshot struct {
 	Identifier     string      `json:"identifier"`
 	Title          string      `json:"title,omitempty"`
 	State          string      `json:"state,omitempty"`
+	Lane           string      `json:"lane,omitempty"`
+	ReviewOf       string      `json:"review_of,omitempty"`
 	QueueStatus    string      `json:"queue_status"`
 	Priority       *int        `json:"priority,omitempty"`
 	Order          *int        `json:"order,omitempty"`
@@ -241,6 +249,8 @@ type RunHistorySnapshot struct {
 	Identifier     string      `json:"identifier"`
 	Title          string      `json:"title,omitempty"`
 	State          string      `json:"state,omitempty"`
+	Lane           string      `json:"lane,omitempty"`
+	ReviewOf       string      `json:"review_of,omitempty"`
 	Status         string      `json:"status"`
 	WorkspacePath  string      `json:"workspace_path"`
 	SessionID      string      `json:"session_id,omitempty"`
@@ -369,6 +379,8 @@ func (controller *Controller) Snapshot() Snapshot {
 			IssueID:        issueID,
 			Identifier:     entry.Identifier,
 			State:          entry.Issue.State,
+			Lane:           entry.Issue.Lane,
+			ReviewOf:       entry.Issue.ReviewOf,
 			Title:          entry.Issue.Title,
 			QueueStatus:    "running",
 			Priority:       entry.Issue.Priority,
@@ -399,6 +411,8 @@ func (controller *Controller) Snapshot() Snapshot {
 			Identifier:   entry.Identifier,
 			Title:        entry.Issue.Title,
 			State:        entry.Issue.State,
+			Lane:         entry.Issue.Lane,
+			ReviewOf:     entry.Issue.ReviewOf,
 			QueueStatus:  "retrying",
 			Priority:     entry.Issue.Priority,
 			Order:        entry.Issue.Order,
@@ -639,6 +653,9 @@ func (controller *Controller) canDispatch(issue domain.Issue) bool {
 	if len(controller.running) >= controller.cfg.Orchestrator.MaxConcurrentAgents {
 		return false
 	}
+	if !controller.hasLaneCapacityLocked(issue.Lane) {
+		return false
+	}
 	if _, claimed := controller.claimed[issue.ID]; claimed {
 		return false
 	}
@@ -824,6 +841,8 @@ func issueDetailFromRunningEntry(issueID string, entry *runningEntry, now time.T
 		Identifier:     entry.Identifier,
 		Title:          entry.Issue.Title,
 		State:          entry.Issue.State,
+		Lane:           entry.Issue.Lane,
+		ReviewOf:       entry.Issue.ReviewOf,
 		QueueStatus:    "running",
 		Priority:       entry.Issue.Priority,
 		Order:          entry.Issue.Order,
@@ -855,6 +874,8 @@ func issueDetailFromRetryEntry(issueID string, entry *retryEntry, now time.Time)
 		Identifier:   entry.Identifier,
 		Title:        entry.Issue.Title,
 		State:        entry.Issue.State,
+		Lane:         entry.Issue.Lane,
+		ReviewOf:     entry.Issue.ReviewOf,
 		QueueStatus:  "retrying",
 		Priority:     entry.Issue.Priority,
 		Order:        entry.Issue.Order,
@@ -876,6 +897,8 @@ func issueDetailFromBacklogSnapshot(entry BacklogSnapshot) IssueDetailSnapshot {
 		Identifier:   entry.Identifier,
 		Title:        entry.Title,
 		State:        entry.State,
+		Lane:         entry.Lane,
+		ReviewOf:     entry.ReviewOf,
 		QueueStatus:  entry.QueueStatus,
 		Priority:     entry.Priority,
 		Order:        entry.Order,
@@ -895,6 +918,8 @@ func backlogSnapshotFromIssue(issue domain.Issue) BacklogSnapshot {
 		Identifier:   issue.Identifier,
 		Title:        issue.Title,
 		State:        issue.State,
+		Lane:         issue.Lane,
+		ReviewOf:     issue.ReviewOf,
 		QueueStatus:  queueStatus,
 		Priority:     issue.Priority,
 		Order:        issue.Order,
@@ -902,6 +927,37 @@ func backlogSnapshotFromIssue(issue domain.Issue) BacklogSnapshot {
 		BlockedBy:    append([]string(nil), issue.BlockedBy...),
 		UpdatedAt:    issue.UpdatedAt,
 	}
+}
+
+func (controller *Controller) hasLaneCapacityLocked(lane string) bool {
+	limits := controller.cfg.Orchestrator.ConcurrencyLimits
+	if len(limits) == 0 {
+		return true
+	}
+	normalized := issueLaneKey(lane)
+	limit, ok := limits[normalized]
+	if !ok {
+		return true
+	}
+	running := 0
+	for _, entry := range controller.running {
+		if issueLaneKey(entry.Issue.Lane) != normalized {
+			continue
+		}
+		running++
+		if running >= limit {
+			return false
+		}
+	}
+	return true
+}
+
+func issueLaneKey(lane string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(lane))
+	if trimmed == "" {
+		return "default"
+	}
+	return trimmed
 }
 
 func maxInt64(left int64, right int64) int64 {
@@ -933,6 +989,8 @@ func buildRunHistorySnapshot(entry *runningEntry, result runner.Result, err erro
 		Identifier:     entry.Identifier,
 		Title:          entry.Issue.Title,
 		State:          entry.Issue.State,
+		Lane:           entry.Issue.Lane,
+		ReviewOf:       entry.Issue.ReviewOf,
 		Status:         status,
 		WorkspacePath:  workspacePath,
 		SessionID:      entry.SessionID,

@@ -31,13 +31,17 @@ func (renderer *Renderer) Render(issue domain.Issue, attempt int) string {
 	context := map[string]any{
 		"attempt": attempt,
 		"issue": map[string]any{
-			"id":          issue.ID,
-			"identifier":  issue.Identifier,
-			"title":       issue.Title,
-			"description": issue.Description,
-			"state":       issue.State,
-			"url":         issue.URL,
-			"branch_name": issue.BranchName,
+			"id":           issue.ID,
+			"identifier":   issue.Identifier,
+			"title":        issue.Title,
+			"description":  issue.Description,
+			"state":        issue.State,
+			"lane":         issue.Lane,
+			"review_of":    issue.ReviewOf,
+			"url":          issue.URL,
+			"branch_name":  issue.BranchName,
+			"dependencies": append([]string(nil), issue.Dependencies...),
+			"blocked_by":   append([]string(nil), issue.BlockedBy...),
 		},
 	}
 

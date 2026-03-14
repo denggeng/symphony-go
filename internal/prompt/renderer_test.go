@@ -18,6 +18,16 @@ func TestRendererRender(t *testing.T) {
 	}
 }
 
+func TestRendererRenderIncludesReviewFields(t *testing.T) {
+	t.Parallel()
+	renderer := New(workflow.Definition{PromptTemplate: `Lane: {{ issue.lane }}
+Review: {{ issue.review_of }}`})
+	text := renderer.Render(domain.Issue{Lane: "review", ReviewOf: "impl-1"}, 1)
+	if text != "Lane: review\nReview: impl-1" {
+		t.Fatalf("unexpected render with review fields: %q", text)
+	}
+}
+
 func TestContinuationPrompt(t *testing.T) {
 	t.Parallel()
 	text := ContinuationPrompt(2, 5)

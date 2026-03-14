@@ -58,6 +58,20 @@ Default local state mapping is:
 
 If your queue includes review or audit tasks, a common extension is to add `Reviewed` as an additional terminal state. `Reviewed` still satisfies `depends_on`, while `Blocked` does not.
 
+## Orchestrator concurrency lanes
+
+Use `orchestrator.max_concurrent_agents` for the global cap, and `orchestrator.concurrency_limits` when you want separate lanes such as one implementation worker plus one reviewer:
+
+```yaml
+orchestrator:
+  max_concurrent_agents: 2
+  concurrency_limits:
+    default: 1
+    review: 1
+```
+
+Local Markdown tasks can set `lane: review` in front matter so a review task uses the `review` lane while normal build tasks stay in `default`. This lets review and implementation run in parallel without opening the door to multiple implementation writers at once.
+
 ## Local task file format
 
 A local task is a Markdown file with optional front matter.
@@ -67,11 +81,13 @@ Supported front matter keys:
 - `id`
 - `title`
 - `state`
+- `lane`
+- `review_of`
 - `priority`
 - `order`
 - `depends_on`
 
-If `id` is omitted, the filename stem becomes the task identifier. `priority` and `order` are optional numeric hints where lower values run first. `depends_on` accepts a YAML list or comma-separated string of task identifiers, and each dependency must reach a successful terminal state such as `Done` or `Reviewed` before the task becomes dispatchable.
+If `id` is omitted, the filename stem becomes the task identifier. `priority` and `order` are optional numeric hints where lower values run first. `depends_on` accepts a YAML list or comma-separated string of task identifiers, and each dependency must reach a successful terminal state such as `Done` or `Reviewed` before the task becomes dispatchable. `lane` optionally routes the task into an orchestrator concurrency lane such as `review`, and `review_of` points at the implementation task identifier whose change bundle the reviewer should inspect.
 
 ## Environment variables
 
@@ -107,6 +123,11 @@ local:
   results_dir: $SYMPHONY_LOCAL_RESULTS_DIR
   active_states: ["To Do", "In Progress"]
   terminal_states: ["Done", "Reviewed", "Blocked"]
+orchestrator:
+  max_concurrent_agents: 2
+  concurrency_limits:
+    default: 1
+    review: 1
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
   seed:
@@ -122,6 +143,8 @@ Leave `SYMPHONY_WORKSPACE_BASELINE_DIR` unset if you only want the clone hook an
 This repo also includes reusable shell hook templates under `scripts/`:
 
 - `scripts/repo-clone-after-create.sh` — clones `SOURCE_REPO_URL` into the new workspace, supports optional `SOURCE_REPO_REF` and `SOURCE_REPO_DEPTH`, and initializes submodules when present
+- `scripts/review-target-before-run.sh` — when a local task sets `review_of`, copies that target task's saved review bundle into `.symphony/review-target/` inside the reviewer workspace
+- `scripts/git-review-artifacts-after-run.sh` — exports a per-task git review bundle under `local_tasks/results/<task-id>/git/`, and can optionally create a local workspace commit when `SYMPHONY_TASK_GIT_AUTO_COMMIT=1`
 - `scripts/local-repo-sync-before-run.sh` — if `SOURCE_REPO_URL` points at a local directory or `file://` path, rsyncs the current source tree into the workspace before each run; otherwise it exits without changing anything
 - `scripts/local-repo-sync-after-run.sh` — in local Markdown mode, if task metadata ends in `Done` (or `SOURCE_REPO_SYNC_BACK_STATE`), rsyncs the workspace back into the local source tree; prefer built-in `workspace.sync_back` unless you specifically need live source-tree sync
 
@@ -131,10 +154,14 @@ To use these templates, set `SYMPHONY_CONTROL_ROOT` to the absolute path of this
 hooks:
   after_create: |
     "$SYMPHONY_CONTROL_ROOT/scripts/repo-clone-after-create.sh"
+  before_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/review-target-before-run.sh"
+  after_run: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/git-review-artifacts-after-run.sh"
   timeout_ms: 60000
 ```
 
-These local sync helpers expect `rsync` to be installed, and `scripts/local-repo-sync-after-run.sh` also expects `jq` so it can read local task metadata.
+These review helpers expect `git` to be installed, and `scripts/git-review-artifacts-after-run.sh` also expects `jq` so it can read local task metadata. Set `SYMPHONY_TASK_GIT_AUTO_COMMIT=1` if you want each successful implementation task to create a local workspace commit for later review; `SYMPHONY_TASK_GIT_COMMIT_STATES` defaults to `Done`.
 
 Optional local live-source sync:
 

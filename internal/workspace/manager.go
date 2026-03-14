@@ -252,6 +252,8 @@ func (manager *Manager) maybeRunHook(ctx context.Context, command string, hookNa
 		"SYMPHONY_ISSUE_IDENTIFIER="+issue.Identifier,
 		"SYMPHONY_ISSUE_TITLE="+issue.Title,
 		"SYMPHONY_ISSUE_STATE="+issue.State,
+		"SYMPHONY_ISSUE_LANE="+issue.Lane,
+		"SYMPHONY_ISSUE_REVIEW_OF="+issue.ReviewOf,
 		"SYMPHONY_WORKSPACE_PATH="+workspacePath,
 	)
 	output, err := cmd.CombinedOutput()

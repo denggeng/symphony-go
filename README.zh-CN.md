@@ -27,7 +27,7 @@
 - Tracker 适配器：
   - 基于 JQL 的 Jira Cloud
   - 基于收件箱/归档目录的本地 Markdown 任务
-- 隔离的每任务工作区与生命周期 Hook
+- 隔离的每任务工作区、内建基线 seed/sync-back，以及生命周期 Hook
 - 通过 stdio 集成 `codex app-server`
 - 回写工具：
   - `jira_api`、`jira_comment`、`jira_transition`
@@ -61,6 +61,7 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 - `SYMPHONY_WORKSPACE_ROOT`
 - `SOURCE_REPO_URL`
 - `SOURCE_REPO_REF`
+- `SYMPHONY_WORKSPACE_BASELINE_DIR`（如果你希望后续任务继承前序任务产物）
 
 `.env.example` 已经提供了本地目录默认值：
 
@@ -68,6 +69,8 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 - `SYMPHONY_LOCAL_STATE_DIR`
 - `SYMPHONY_LOCAL_ARCHIVE_DIR`
 - `SYMPHONY_LOCAL_RESULTS_DIR`
+
+如果设置了 `SYMPHONY_WORKSPACE_BASELINE_DIR`，本地工作流示例会在创建新工作区后自动叠加该目录，并在任务进入 `Done` 后把改动同步回去。这样后续任务就能直接继承累计基线，而不需要额外的 rsync 风格 Hook。
 
 运行：
 
@@ -81,8 +84,9 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 - `SYMPHONY_WORKSPACE_ROOT/<task-id>` 下生成工作区
 - `local_tasks/archive/` 下出现归档后的任务文件
 - `local_tasks/results/<task-id>/` 下出现结果文件
+- 如果启用了基线同步，`Done` 任务的改动会回写到 `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
-详细说明见 `docs/zh-CN/local-tasks.md`。
+本地任务 front matter 也支持 `priority`、`order`、`depends_on`，可以显式控制派发顺序。详细说明见 `docs/zh-CN/local-tasks.md`。
 
 ### 3. Jira 模式
 

@@ -18,6 +18,10 @@ orchestrator:
   max_retry_backoff_ms: 300000
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
+  seed:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+  sync_back:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
 hooks:
   after_create: git clone --depth 1 --branch "$SOURCE_REPO_REF" "$SOURCE_REPO_URL" .
   timeout_ms: 60000

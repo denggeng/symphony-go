@@ -7,7 +7,7 @@
 - `tracker`：任务来源类型，以及 Jira 模式下的连接配置
 - `local`：本地 Markdown 模式下的目录与状态映射
 - `orchestrator`：轮询间隔、并发度与重试上限
-- `workspace`：每任务工作区根目录
+- `workspace`：每任务工作区根目录，以及可选的基线 seed/sync-back
 - `hooks`：工作区生命周期中的可选 shell Hook
 - `agent`：Codex 最大 turn 数
 - `codex`：app-server 命令与运行时策略
@@ -65,8 +65,11 @@
 - `id`
 - `title`
 - `state`
+- `priority`
+- `order`
+- `depends_on`
 
-如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。
+如果未提供 `id`，则使用文件名（不含扩展名）作为任务标识。`priority` 与 `order` 都是可选数字字段，值越小越先执行。`depends_on` 支持 YAML 列表或逗号分隔字符串；只有当每个依赖都进入成功终态后，当前任务才会变成可调度状态。
 
 ## 环境变量
 
@@ -74,9 +77,21 @@
 
 路径字段同时支持 `~/...` 展开。
 
-如果路径字段里引用了环境变量，请确保该变量已经设置。仓库中的 `.env.example` 已为本地目录提供安全默认值。
+如果路径字段里引用了环境变量，请确保该变量已经设置。仓库中的 `.env.example` 已为本地目录提供安全默认值，并预留了可选基线路径变量。
 
 `symphonyd` 会在解析工作流配置前，自动加载与 `WORKFLOW.md` 同目录的 `.env` 文件；如果某个变量已经存在于当前进程环境中，则以当前环境变量为准，不会被覆盖。
+
+## Workspace 基线同步
+
+`workspace` 配置段支持两个可选能力，用来让任务之间继承累计产物：
+
+- `workspace.seed.path`：在 `hooks.after_create` 执行完后，把一个基线目录叠加到新创建的工作区中
+- `workspace.seed.excludes`：补充额外排除项；默认始终排除 `.git` 与 `tmp`
+- `workspace.sync_back.path`：当任务进入允许的终态后，把工作区文件复制回基线目录
+- `workspace.sync_back.on_states`：限制哪些终态会触发回写；当设置了 `path` 但未填写 `on_states` 时，本地模式默认是 `Done`，Jira 模式默认是 `Done` 与 `Closed`
+- `workspace.sync_back.excludes`：补充额外排除项；默认始终排除 `.git` 与 `tmp`
+
+当前行为是“增量叠加”而不是镜像：seed 与 sync-back 会复制/覆盖源树中存在的文件，但不会删除目标树中缺失的文件。出于安全考虑，被复制树中的 symlink 会被拒绝。
 
 ## 本地模式配置示例
 
@@ -92,7 +107,13 @@ local:
   terminal_states: ["Done", "Blocked"]
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
+  seed:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+  sync_back:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
 ```
+
+如果你只想保留 clone Hook，而不启用内建基线继承/回写，可以不设置 `SYMPHONY_WORKSPACE_BASELINE_DIR`。
 
 ## Jira 模式配置示例
 

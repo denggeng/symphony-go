@@ -8,18 +8,21 @@ import (
 )
 
 type Issue struct {
-	ID          string
-	Identifier  string
-	Title       string
-	Description string
-	Priority    *int
-	State       string
-	BranchName  string
-	URL         string
-	Labels      []string
-	CreatedAt   *time.Time
-	UpdatedAt   *time.Time
-	Raw         map[string]any
+	ID           string
+	Identifier   string
+	Title        string
+	Description  string
+	Priority     *int
+	Order        *int
+	State        string
+	BranchName   string
+	URL          string
+	Labels       []string
+	Dependencies []string
+	BlockedBy    []string
+	CreatedAt    *time.Time
+	UpdatedAt    *time.Time
+	Raw          map[string]any
 }
 
 type IssueState struct {
@@ -40,10 +43,11 @@ func (issue Issue) MatchesState(states []string) bool {
 
 func SortIssues(issues []Issue) {
 	slices.SortFunc(issues, func(left Issue, right Issue) int {
-		leftPriority := priorityValue(left.Priority)
-		rightPriority := priorityValue(right.Priority)
+		if diff := cmp.Compare(optionalIntValue(left.Priority), optionalIntValue(right.Priority)); diff != 0 {
+			return diff
+		}
 
-		if diff := cmp.Compare(leftPriority, rightPriority); diff != 0 {
+		if diff := cmp.Compare(optionalIntValue(left.Order), optionalIntValue(right.Order)); diff != 0 {
 			return diff
 		}
 
@@ -55,12 +59,12 @@ func SortIssues(issues []Issue) {
 	})
 }
 
-func priorityValue(priority *int) int {
-	if priority == nil {
+func optionalIntValue(value *int) int {
+	if value == nil {
 		return 1_000_000
 	}
 
-	return *priority
+	return *value
 }
 
 func compareTimes(left *time.Time, right *time.Time) int {

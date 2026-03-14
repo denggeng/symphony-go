@@ -191,7 +191,7 @@ func (server *Server) handleIssue(writer http.ResponseWriter, request *http.Requ
 	}
 	snapshot, ok := server.controller.IssueSnapshot(identifier)
 	if !ok {
-		server.writeError(writer, http.StatusNotFound, "issue not found in running set")
+		server.writeError(writer, http.StatusNotFound, "issue not found in live snapshot")
 		return
 	}
 	server.writeJSON(writer, http.StatusOK, snapshot)

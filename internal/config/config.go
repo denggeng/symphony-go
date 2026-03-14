@@ -52,7 +52,22 @@ type OrchestratorConfig struct {
 }
 
 type WorkspaceConfig struct {
-	Root string `yaml:"root" json:"root"`
+	Root     string                  `yaml:"root" json:"root"`
+	Seed     WorkspaceSeedConfig     `yaml:"seed" json:"seed,omitempty"`
+	SyncBack WorkspaceSyncBackConfig `yaml:"sync_back" json:"sync_back,omitempty"`
+}
+
+// WorkspaceSeedConfig overlays a baseline directory into newly created workspaces.
+type WorkspaceSeedConfig struct {
+	Path     string   `yaml:"path" json:"path,omitempty"`
+	Excludes []string `yaml:"excludes" json:"excludes,omitempty"`
+}
+
+// WorkspaceSyncBackConfig copies workspace files back to a baseline directory on selected terminal states.
+type WorkspaceSyncBackConfig struct {
+	Path     string   `yaml:"path" json:"path,omitempty"`
+	OnStates []string `yaml:"on_states" json:"on_states,omitempty"`
+	Excludes []string `yaml:"excludes" json:"excludes,omitempty"`
 }
 
 type HooksConfig struct {
@@ -122,7 +137,22 @@ type OrchestratorSummary struct {
 }
 
 type WorkspaceSummary struct {
-	Root string `json:"root"`
+	Root     string                    `json:"root"`
+	Seed     *WorkspaceSeedSummary     `json:"seed,omitempty"`
+	SyncBack *WorkspaceSyncBackSummary `json:"sync_back,omitempty"`
+}
+
+// WorkspaceSeedSummary describes the configured workspace baseline overlay.
+type WorkspaceSeedSummary struct {
+	Path     string   `json:"path,omitempty"`
+	Excludes []string `json:"excludes,omitempty"`
+}
+
+// WorkspaceSyncBackSummary describes the configured workspace sync-back target.
+type WorkspaceSyncBackSummary struct {
+	Path     string   `json:"path,omitempty"`
+	OnStates []string `json:"on_states,omitempty"`
+	Excludes []string `json:"excludes,omitempty"`
 }
 
 type HooksSummary struct {
@@ -199,6 +229,18 @@ func (cfg Config) Summary() Summary {
 			ResultsDir: cfg.Local.ResultsDir,
 		}
 	}
+	var seedSummary *WorkspaceSeedSummary
+	if strings.TrimSpace(cfg.Workspace.Seed.Path) != "" {
+		seedSummary = &WorkspaceSeedSummary{Path: cfg.Workspace.Seed.Path, Excludes: append([]string(nil), cfg.Workspace.Seed.Excludes...)}
+	}
+	var syncBackSummary *WorkspaceSyncBackSummary
+	if strings.TrimSpace(cfg.Workspace.SyncBack.Path) != "" {
+		syncBackSummary = &WorkspaceSyncBackSummary{
+			Path:     cfg.Workspace.SyncBack.Path,
+			OnStates: append([]string(nil), cfg.Workspace.SyncBack.OnStates...),
+			Excludes: append([]string(nil), cfg.Workspace.SyncBack.Excludes...),
+		}
+	}
 	return Summary{
 		Tracker: TrackerSummary{
 			Kind:           cfg.Tracker.Kind,
@@ -217,7 +259,7 @@ func (cfg Config) Summary() Summary {
 			MaxConcurrentAgents: cfg.Orchestrator.MaxConcurrentAgents,
 			MaxRetryBackoffMs:   cfg.Orchestrator.MaxRetryBackoffMs,
 		},
-		Workspace: WorkspaceSummary{Root: cfg.Workspace.Root},
+		Workspace: WorkspaceSummary{Root: cfg.Workspace.Root, Seed: seedSummary, SyncBack: syncBackSummary},
 		Hooks: HooksSummary{
 			AfterCreate:  strings.TrimSpace(cfg.Hooks.AfterCreate) != "",
 			BeforeRun:    strings.TrimSpace(cfg.Hooks.BeforeRun) != "",
@@ -271,6 +313,20 @@ func (cfg Config) IsActiveState(state string) bool {
 func (cfg Config) IsTerminalState(state string) bool {
 	_, ok := cfg.TerminalStateSet()[normalizeState(state)]
 	return ok
+}
+
+// ShouldSyncBackState reports whether workspace sync-back should run for the supplied state.
+func (cfg Config) ShouldSyncBackState(state string) bool {
+	if strings.TrimSpace(cfg.Workspace.SyncBack.Path) == "" {
+		return false
+	}
+	normalized := normalizeState(state)
+	for _, candidate := range cfg.Workspace.SyncBack.OnStates {
+		if normalizeState(candidate) == normalized {
+			return true
+		}
+	}
+	return false
 }
 
 func (cfg Config) EffectiveTurnSandboxPolicy(workspace string) map[string]any {
@@ -334,6 +390,15 @@ func applyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.Workspace.Root) == "" {
 		cfg.Workspace.Root = filepath.Join(os.TempDir(), "symphony-workspaces")
 	}
+	cfg.Workspace.Seed.Excludes = normalizeWorkspaceExcludes(cfg.Workspace.Seed.Excludes)
+	cfg.Workspace.SyncBack.Excludes = normalizeWorkspaceExcludes(cfg.Workspace.SyncBack.Excludes)
+	if strings.TrimSpace(cfg.Workspace.SyncBack.Path) != "" && len(cfg.Workspace.SyncBack.OnStates) == 0 {
+		if cfg.Tracker.Kind == "local" {
+			cfg.Workspace.SyncBack.OnStates = []string{"Done"}
+		} else {
+			cfg.Workspace.SyncBack.OnStates = []string{"Done", "Closed"}
+		}
+	}
 	if strings.TrimSpace(cfg.Local.InboxDir) == "" {
 		cfg.Local.InboxDir = filepath.Join(".", "local_tasks", "inbox")
 	}
@@ -390,6 +455,11 @@ func expandEnvironment(cfg *Config) {
 	cfg.Local.ArchiveDir = expandPath(cfg.Local.ArchiveDir)
 	cfg.Local.ResultsDir = expandPath(cfg.Local.ResultsDir)
 	cfg.Workspace.Root = expandPath(cfg.Workspace.Root)
+	cfg.Workspace.Seed.Path = expandPath(cfg.Workspace.Seed.Path)
+	cfg.Workspace.Seed.Excludes = normalizeWorkspaceExcludes(expandStrings(cfg.Workspace.Seed.Excludes))
+	cfg.Workspace.SyncBack.Path = expandPath(cfg.Workspace.SyncBack.Path)
+	cfg.Workspace.SyncBack.OnStates = expandStrings(cfg.Workspace.SyncBack.OnStates)
+	cfg.Workspace.SyncBack.Excludes = normalizeWorkspaceExcludes(expandStrings(cfg.Workspace.SyncBack.Excludes))
 	cfg.Hooks.AfterCreate = expandString(cfg.Hooks.AfterCreate)
 	cfg.Hooks.BeforeRun = expandString(cfg.Hooks.BeforeRun)
 	cfg.Hooks.AfterRun = expandString(cfg.Hooks.AfterRun)
@@ -418,6 +488,12 @@ func validate(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.Workspace.Root) == "" {
 		return fmt.Errorf("workspace.root must not be empty")
+	}
+	if strings.TrimSpace(cfg.Workspace.SyncBack.Path) == "" && len(cfg.Workspace.SyncBack.OnStates) > 0 {
+		return fmt.Errorf("workspace.sync_back.path must be set when workspace.sync_back.on_states is configured")
+	}
+	if strings.TrimSpace(cfg.Workspace.SyncBack.Path) != "" && len(cfg.Workspace.SyncBack.OnStates) == 0 {
+		return fmt.Errorf("workspace.sync_back.on_states must not be empty when workspace.sync_back.path is set")
 	}
 	if cfg.Agent.MaxTurns <= 0 {
 		return fmt.Errorf("agent.max_turns must be greater than 0")
@@ -489,6 +565,19 @@ func expandPath(value string) string {
 	return expanded
 }
 
+func expandStrings(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if expanded := expandString(value); expanded != "" {
+			result = append(result, expanded)
+		}
+	}
+	return result
+}
+
 func expandMap(values map[string]any) map[string]any {
 	if len(values) == 0 {
 		return values
@@ -519,6 +608,39 @@ func expandValue(value any) any {
 	default:
 		return value
 	}
+}
+
+var defaultWorkspaceExcludes = []string{".git", "tmp"}
+
+func normalizeWorkspaceExcludes(values []string) []string {
+	combined := append(append([]string(nil), defaultWorkspaceExcludes...), values...)
+	result := make([]string, 0, len(combined))
+	seen := make(map[string]struct{}, len(combined))
+	for _, value := range combined {
+		normalized := normalizeWorkspaceExclude(value)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func normalizeWorkspaceExclude(value string) string {
+	trimmed := strings.TrimSpace(value)
+	trimmed = strings.Trim(trimmed, "/\\")
+	if trimmed == "" {
+		return ""
+	}
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." {
+		return ""
+	}
+	return filepath.ToSlash(cleaned)
 }
 
 func cloneMap(values map[string]any) map[string]any {

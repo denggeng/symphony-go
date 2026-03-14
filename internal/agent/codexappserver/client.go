@@ -526,24 +526,71 @@ func usageFromPayload(payload map[string]any) agent.Usage {
 	if payload == nil {
 		return agent.Usage{}
 	}
-	for _, candidate := range []any{payload["usage"], payload["params"]} {
-		usageMap, ok := candidate.(map[string]any)
-		if !ok {
-			continue
-		}
-		if usageField, ok := usageMap["usage"].(map[string]any); ok {
-			usageMap = usageField
-		}
-		usage := agent.Usage{
-			InputTokens:  firstInt(usageMap, "input_tokens", "inputTokens"),
-			OutputTokens: firstInt(usageMap, "output_tokens", "outputTokens"),
-			TotalTokens:  firstInt(usageMap, "total_tokens", "totalTokens"),
-		}
-		if usage.TotalTokens != 0 || usage.InputTokens != 0 || usage.OutputTokens != 0 {
+	for _, candidate := range usageCandidates(payload) {
+		if usage, ok := usageFromMap(candidate); ok {
 			return usage
 		}
 	}
 	return agent.Usage{}
+}
+
+func usageCandidates(payload map[string]any) []map[string]any {
+	candidates := make([]map[string]any, 0, 8)
+	appendMap := func(value any) {
+		usageMap, ok := value.(map[string]any)
+		if ok {
+			candidates = append(candidates, usageMap)
+		}
+	}
+
+	appendMap(payload["usage"])
+	appendMap(payload["params"])
+	appendMap(payload["payload"])
+	appendMap(payload["info"])
+
+	if nestedPayload, ok := payload["payload"].(map[string]any); ok {
+		appendMap(nestedPayload["usage"])
+		appendMap(nestedPayload["info"])
+		if info, ok := nestedPayload["info"].(map[string]any); ok {
+			appendMap(info["total_token_usage"])
+			appendMap(info["last_token_usage"])
+		}
+	}
+
+	if info, ok := payload["info"].(map[string]any); ok {
+		appendMap(info["total_token_usage"])
+		appendMap(info["last_token_usage"])
+	}
+
+	return candidates
+}
+
+func usageFromMap(values map[string]any) (agent.Usage, bool) {
+	if values == nil {
+		return agent.Usage{}, false
+	}
+	if usageField, ok := values["usage"].(map[string]any); ok {
+		values = usageField
+	}
+	if usageField, ok := values["total_token_usage"].(map[string]any); ok {
+		values = usageField
+	} else if usageField, ok := values["last_token_usage"].(map[string]any); ok {
+		values = usageField
+	}
+	usage := agent.Usage{
+		InputTokens:           firstInt(values, "input_tokens", "inputTokens"),
+		OutputTokens:          firstInt(values, "output_tokens", "outputTokens"),
+		TotalTokens:           firstInt(values, "total_tokens", "totalTokens"),
+		CachedInputTokens:     firstInt(values, "cached_input_tokens", "cachedInputTokens"),
+		ReasoningOutputTokens: firstInt(values, "reasoning_output_tokens", "reasoningOutputTokens"),
+	}
+	if usage.TotalTokens == 0 && (usage.InputTokens != 0 || usage.OutputTokens != 0) {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
+	if usage.TotalTokens == 0 && usage.InputTokens == 0 && usage.OutputTokens == 0 && usage.CachedInputTokens == 0 && usage.ReasoningOutputTokens == 0 {
+		return agent.Usage{}, false
+	}
+	return usage, true
 }
 
 func firstInt(values map[string]any, keys ...string) int {

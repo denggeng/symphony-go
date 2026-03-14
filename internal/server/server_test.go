@@ -84,6 +84,9 @@ func TestDashboardPageRendersHTML(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "symphony-go dashboard") {
 		t.Fatalf("expected dashboard markup")
 	}
+	if !strings.Contains(response.Body.String(), "Pending Backlog") {
+		t.Fatalf("expected backlog markup")
+	}
 }
 
 func TestHistoryPageRendersHTML(t *testing.T) {
@@ -133,6 +136,12 @@ func TestIssuePageRendersHTML(t *testing.T) {
 	}
 	if !strings.Contains(body, `data-issue-identifier="ABC-123"`) {
 		t.Fatalf("expected issue identifier in html")
+	}
+	if !strings.Contains(body, "Queue Detail") {
+		t.Fatalf("expected issue detail markup")
+	}
+	if !strings.Contains(body, "Recent Runs for Issue") {
+		t.Fatalf("expected issue history markup")
 	}
 }
 

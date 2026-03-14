@@ -7,7 +7,7 @@ Runtime config lives in `WORKFLOW.md` front matter.
 - `tracker`: tracker kind and Jira connection settings when Jira mode is used
 - `local`: local Markdown task directories and state mapping when local mode is used
 - `orchestrator`: poll cadence, concurrency, and retry ceiling
-- `workspace`: root directory for per-task workspaces
+- `workspace`: root directory for per-task workspaces plus optional baseline seed/sync-back
 - `hooks`: optional shell hooks for workspace lifecycle
 - `agent`: Codex turn limits
 - `codex`: app-server command and runtime policies
@@ -65,8 +65,11 @@ Supported front matter keys:
 - `id`
 - `title`
 - `state`
+- `priority`
+- `order`
+- `depends_on`
 
-If `id` is omitted, the filename stem becomes the task identifier.
+If `id` is omitted, the filename stem becomes the task identifier. `priority` and `order` are optional numeric hints where lower values run first. `depends_on` accepts a YAML list or comma-separated string of task identifiers, and each dependency must reach a successful terminal state before the task becomes dispatchable.
 
 ## Environment variables
 
@@ -74,9 +77,21 @@ String values support shell-style env expansion such as `$JIRA_BASE_URL`.
 
 Path values also support `~/...` expansion for user home directories.
 
-If you reference an env var in a path field, make sure that env var is set. The included `.env.example` provides safe defaults for the local task directories.
+If you reference an env var in a path field, make sure that env var is set. The included `.env.example` provides safe defaults for the local task directories and an optional baseline path placeholder.
 
 `symphonyd` auto-loads a `.env` file from the same directory as `WORKFLOW.md` before parsing workflow config. Existing process environment variables still win.
+
+## Workspace baseline sync
+
+The `workspace` block supports two optional helpers for task-to-task carry-over:
+
+- `workspace.seed.path` overlays a baseline directory into a newly created workspace after `hooks.after_create` finishes
+- `workspace.seed.excludes` adds extra exclusions; `.git` and `tmp` are always excluded by default
+- `workspace.sync_back.path` copies workspace files back to a baseline directory after an issue reaches an eligible terminal state
+- `workspace.sync_back.on_states` limits which terminal states trigger copy-back; when `path` is set and `on_states` is omitted, local mode defaults to `Done` and Jira mode defaults to `Done` plus `Closed`
+- `workspace.sync_back.excludes` adds extra exclusions; `.git` and `tmp` are always excluded by default
+
+Current behavior is additive: seed and sync-back copy files into the target tree, but they do not delete files that are missing from the source tree. For safety, symlinks inside the copied tree are rejected.
 
 ## Example local config
 
@@ -92,7 +107,13 @@ local:
   terminal_states: ["Done", "Blocked"]
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
+  seed:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+  sync_back:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
 ```
+
+Leave `SYMPHONY_WORKSPACE_BASELINE_DIR` unset if you only want the clone hook and not the built-in baseline carry-over.
 
 ## Example Jira config
 

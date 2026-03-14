@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,9 +52,12 @@ type taskComment struct {
 }
 
 type taskFrontMatter struct {
-	ID    string
-	Title string
-	State string
+	ID        string
+	Title     string
+	State     string
+	Priority  *int
+	Order     *int
+	DependsOn []string
 }
 
 // New creates a local tracker client from runtime config.
@@ -66,15 +71,20 @@ func New(cfg config.Config, logger *slog.Logger) *Client {
 func (client *Client) Kind() string { return "local" }
 
 func (client *Client) FetchCandidateIssues(_ context.Context) ([]domain.Issue, error) {
-	records, err := client.scanTasks(false)
+	records, err := client.scanTasks(true)
 	if err != nil {
 		return nil, err
 	}
+	client.applyDependencyState(records)
 	issues := make([]domain.Issue, 0, len(records))
 	for _, record := range records {
-		if client.cfg.IsActiveState(record.Issue.State) {
-			issues = append(issues, record.Issue)
+		if !client.cfg.IsActiveState(record.Issue.State) {
+			continue
 		}
+		if len(record.Issue.BlockedBy) > 0 {
+			continue
+		}
+		issues = append(issues, record.Issue)
 	}
 	domain.SortIssues(issues)
 	return issues, nil
@@ -85,6 +95,7 @@ func (client *Client) FetchIssuesByIDs(_ context.Context, ids []string) ([]domai
 	if err != nil {
 		return nil, err
 	}
+	client.applyDependencyState(records)
 	issues := make([]domain.Issue, 0, len(ids))
 	for _, id := range ids {
 		record, ok := records[strings.TrimSpace(id)]
@@ -103,6 +114,7 @@ func (client *Client) FetchIssuesByStates(_ context.Context, states []string) ([
 	if err != nil {
 		return nil, err
 	}
+	client.applyDependencyState(records)
 	issues := make([]domain.Issue, 0, len(records))
 	for _, record := range records {
 		if record.Issue.MatchesState(states) {
@@ -322,13 +334,16 @@ func (client *Client) parseTaskFile(path string, archived bool) (*taskRecord, er
 	}
 	createdAt := info.ModTime().UTC()
 	issue := domain.Issue{
-		ID:          identifier,
-		Identifier:  identifier,
-		Title:       title,
-		Description: strings.TrimSpace(definition.Prompt),
-		State:       stateName,
-		CreatedAt:   &createdAt,
-		UpdatedAt:   &updatedAt,
+		ID:           identifier,
+		Identifier:   identifier,
+		Title:        title,
+		Description:  strings.TrimSpace(definition.Prompt),
+		Priority:     metadata.Priority,
+		Order:        metadata.Order,
+		State:        stateName,
+		Dependencies: append([]string(nil), metadata.DependsOn...),
+		CreatedAt:    &createdAt,
+		UpdatedAt:    &updatedAt,
 	}
 	record := &taskRecord{Issue: issue, Summary: state.Summary, Comments: append([]taskComment(nil), state.Comments...)}
 	if archived {
@@ -453,10 +468,167 @@ func decodeFrontMatter(values map[string]any) taskFrontMatter {
 	if values == nil {
 		return frontMatter
 	}
-	frontMatter.ID, _ = values["id"].(string)
-	frontMatter.Title, _ = values["title"].(string)
-	frontMatter.State, _ = values["state"].(string)
+	frontMatter.ID = frontMatterString(values["id"])
+	frontMatter.Title = frontMatterString(values["title"])
+	frontMatter.State = frontMatterString(values["state"])
+	frontMatter.Priority = frontMatterInt(values["priority"])
+	frontMatter.Order = frontMatterInt(values["order"])
+	frontMatter.DependsOn = normalizeIdentifiers(frontMatterStringList(values["depends_on"]))
 	return frontMatter
+}
+
+func (client *Client) applyDependencyState(records map[string]*taskRecord) {
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		record.Issue.BlockedBy = client.blockedDependencies(record.Issue, records)
+	}
+}
+
+func (client *Client) blockedDependencies(issue domain.Issue, records map[string]*taskRecord) []string {
+	if len(issue.Dependencies) == 0 {
+		return nil
+	}
+	blocked := make([]string, 0, len(issue.Dependencies))
+	for _, dependency := range issue.Dependencies {
+		if !client.isDependencySatisfied(dependency, records) {
+			blocked = append(blocked, dependency)
+		}
+	}
+	return blocked
+}
+
+func (client *Client) isDependencySatisfied(identifier string, records map[string]*taskRecord) bool {
+	record, ok := records[strings.TrimSpace(identifier)]
+	if !ok || record == nil {
+		return false
+	}
+	return client.isSuccessfulDependencyState(record.Issue.State)
+}
+
+func (client *Client) isSuccessfulDependencyState(state string) bool {
+	if !client.cfg.IsTerminalState(state) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(state)) {
+	case "blocked", "cancelled", "canceled", "failed", "error", "aborted":
+		return false
+	default:
+		return true
+	}
+}
+
+func frontMatterString(value any) string {
+	stringValue, _ := value.(string)
+	return strings.TrimSpace(stringValue)
+}
+
+func frontMatterInt(value any) *int {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case int:
+		parsed := typed
+		return &parsed
+	case int8:
+		parsed := int(typed)
+		return &parsed
+	case int16:
+		parsed := int(typed)
+		return &parsed
+	case int32:
+		parsed := int(typed)
+		return &parsed
+	case int64:
+		parsed := int(typed)
+		return &parsed
+	case uint:
+		parsed := int(typed)
+		return &parsed
+	case uint8:
+		parsed := int(typed)
+		return &parsed
+	case uint16:
+		parsed := int(typed)
+		return &parsed
+	case uint32:
+		parsed := int(typed)
+		return &parsed
+	case uint64:
+		parsed := int(typed)
+		return &parsed
+	case float32:
+		if math.Trunc(float64(typed)) != float64(typed) {
+			return nil
+		}
+		parsed := int(typed)
+		return &parsed
+	case float64:
+		if math.Trunc(typed) != typed {
+			return nil
+		}
+		parsed := int(typed)
+		return &parsed
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err != nil {
+			return nil
+		}
+		return &parsed
+	default:
+		return nil
+	}
+}
+
+func frontMatterStringList(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case string:
+		parts := strings.Split(typed, ",")
+		values := make([]string, 0, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				values = append(values, trimmed)
+			}
+		}
+		return values
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			trimmed := frontMatterString(item)
+			if trimmed != "" {
+				values = append(values, trimmed)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
+}
+
+func normalizeIdentifiers(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func firstConfiguredActiveState(cfg config.Config) string {

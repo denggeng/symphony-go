@@ -10,7 +10,7 @@ In local mode today:
 
 - `tracker.kind: local`
 - polling a task inbox directory for `*.md` files
-- optional front matter fields: `id`, `title`, `state`
+- optional front matter fields: `id`, `title`, `state`, `priority`, `order`, `depends_on`
 - result state persisted in sidecar JSON files
 - terminal tasks moved from inbox to archive
 - result artifacts written under `local.results_dir/<task-id>/`
@@ -40,6 +40,33 @@ Rules:
 - if `id` is missing, the filename stem becomes the task id
 - the Markdown body becomes the task description shown to Codex
 - `state` must map to one of your configured active or terminal states
+
+## Dispatch order and dependencies
+
+Optional scheduling fields let you control local queue order without relying on file timestamps:
+
+- `priority`: lower numbers run first
+- `order`: lower numbers run first within the same priority
+- `depends_on`: a YAML list or comma-separated string of task ids that must finish first
+- a dependency only becomes ready after it reaches a successful terminal state such as `Done`
+- `Blocked`, `Failed`, `Cancelled`, missing, or still-active dependencies keep the task pending
+- when `priority` or `order` is omitted, sorting falls back to file modification time and task id
+
+Example:
+
+```md
+---
+id: api-routing
+title: Build routing layer
+state: To Do
+priority: 1
+order: 20
+depends_on:
+  - schema
+  - auth-bootstrap
+---
+Implement the API routing after schema and auth bootstrap are complete.
+```
 
 ## Directory model
 
@@ -71,11 +98,14 @@ Set at least:
 SYMPHONY_WORKSPACE_ROOT=/absolute/path/to/symphony-workspaces
 SOURCE_REPO_URL=git@github.com:your-org/your-repo.git
 SOURCE_REPO_REF=main
+SYMPHONY_WORKSPACE_BASELINE_DIR=/absolute/path/to/your/source-repo
 SYMPHONY_LOCAL_INBOX_DIR=./local_tasks/inbox
 SYMPHONY_LOCAL_STATE_DIR=./local_tasks/state
 SYMPHONY_LOCAL_ARCHIVE_DIR=./local_tasks/archive
 SYMPHONY_LOCAL_RESULTS_DIR=./local_tasks/results
 ```
+
+Leave `SYMPHONY_WORKSPACE_BASELINE_DIR` empty if you only want the clone hook and not the built-in carry-over.
 
 Optional but recommended for local UI access:
 
@@ -97,7 +127,16 @@ This example already includes:
 - `tracker.kind: local`
 - local inbox/archive/state/results directories
 - repo bootstrap via `hooks.after_create`
+- built-in `workspace.seed` / `workspace.sync_back` baseline carry-over
 - a prompt that tells Codex to finish with `task_update`
+
+
+If `SYMPHONY_WORKSPACE_BASELINE_DIR` is set:
+
+- the repo still bootstraps through `hooks.after_create`
+- Symphony overlays that baseline into each newly created workspace
+- when Codex closes a task with `task_update(state: Done)`, Symphony syncs the workspace files back to the baseline directory
+- later tasks start from that updated baseline automatically
 
 ### 3. Create your first task
 
@@ -131,8 +170,12 @@ That final call is what moves the loop from “work happened” to “task close
 
 ## What success looks like
 
+The `/issues/<task-id>` page now works for running, retrying, ready, and blocked local tasks. It also shows recent run history for the same task.
+
+
 A successful first local run usually looks like this:
 
+- the dashboard shows running tasks plus separate ready / blocked backlog rows
 - the task appears in the dashboard running list
 - a workspace appears under `SYMPHONY_WORKSPACE_ROOT/<task-id>`
 - the target repo is cloned into that workspace
@@ -141,6 +184,7 @@ A successful first local run usually looks like this:
 - the task file appears in `local_tasks/archive/`
 - a completed entry appears in `/history`
 - result files appear under `local_tasks/results/<task-id>/`
+- if baseline sync is enabled, completed `Done` changes land back in `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
 ## Result files
 
@@ -166,6 +210,7 @@ That means:
 
 - the task file itself does not choose a repo or branch
 - repo selection still comes from `hooks.after_create`
+- built-in `workspace.seed` / `workspace.sync_back` remove the need for extra overlay hooks, but they do not choose the repo for you
 - if you want multi-repo routing later, add another abstraction above the current workspace hook model
 
 ## Recommended first tasks

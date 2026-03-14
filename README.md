@@ -27,7 +27,7 @@ The current version supports a practical closed loop with either Jira or local M
 - tracker adapters for:
   - Jira Cloud via JQL
   - local Markdown tasks via inbox/archive folders
-- isolated per-task workspaces and lifecycle hooks
+- isolated per-task workspaces, built-in baseline seed/sync-back, and lifecycle hooks
 - `codex app-server` integration over stdio
 - dynamic tracker tools during agent turns:
   - `jira_api`, `jira_comment`, `jira_transition`
@@ -61,6 +61,7 @@ Fill in at least these variables in `.env`:
 - `SYMPHONY_WORKSPACE_ROOT`
 - `SOURCE_REPO_URL`
 - `SOURCE_REPO_REF`
+- `SYMPHONY_WORKSPACE_BASELINE_DIR` if later tasks should inherit completed changes
 
 The local task directories already have working defaults in `.env.example`:
 
@@ -68,6 +69,8 @@ The local task directories already have working defaults in `.env.example`:
 - `SYMPHONY_LOCAL_STATE_DIR`
 - `SYMPHONY_LOCAL_ARCHIVE_DIR`
 - `SYMPHONY_LOCAL_RESULTS_DIR`
+
+If `SYMPHONY_WORKSPACE_BASELINE_DIR` is set, the local example overlays that directory into newly created workspaces and syncs `Done` task changes back into it. That lets later tasks inherit the accumulated baseline without extra rsync-style hooks.
 
 Then run:
 
@@ -81,8 +84,9 @@ A successful local run usually produces:
 - a workspace under `SYMPHONY_WORKSPACE_ROOT/<task-id>`
 - an archived task file under `local_tasks/archive/`
 - results under `local_tasks/results/<task-id>/`
+- if baseline sync is enabled, completed `Done` changes copied back to `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
-The detailed local guide is in `docs/local-tasks.md`.
+Local task front matter also supports `priority`, `order`, and `depends_on` for explicit dispatch control. The detailed local guide is in `docs/local-tasks.md`.
 
 ### 3. Jira mode
 

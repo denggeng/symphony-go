@@ -8,7 +8,7 @@
 
 - `tracker.kind: local`
 - 轮询任务收件箱中的 `*.md` 文件
-- front matter 可选字段：`id`、`title`、`state`
+- front matter 可选字段：`id`、`title`、`state`、`priority`、`order`、`depends_on`
 - sidecar JSON 形式的任务状态持久化
 - 终态任务从 inbox 移动到 archive
 - 在 `local.results_dir/<task-id>/` 下写入结果文件
@@ -38,6 +38,33 @@ Validation
 - 未提供 `id` 时，文件名（不含扩展名）会作为任务 id
 - Markdown 正文会成为传递给 Codex 的任务描述
 - `state` 必须落在你配置的活跃态或终态集合中
+
+## 调度顺序与依赖
+
+可选调度字段可以让本地任务按显式规则排队，而不是依赖文件时间戳：
+
+- `priority`：数字越小越先执行
+- `order`：同一 `priority` 内，数字越小越先执行
+- `depends_on`：YAML 列表或逗号分隔字符串，表示必须先完成的任务 id
+- 依赖任务只有进入成功终态（例如 `Done`）后，当前任务才会就绪
+- `Blocked`、`Failed`、`Cancelled`、缺失依赖或仍处于活跃态的依赖，都会让当前任务继续等待
+- 未设置 `priority` 或 `order` 时，会回退到文件修改时间与任务 id 排序
+
+示例：
+
+```md
+---
+id: api-routing
+title: Build routing layer
+state: To Do
+priority: 1
+order: 20
+depends_on:
+  - schema
+  - auth-bootstrap
+---
+在 schema 与 auth bootstrap 完成后，再实现 API 路由层。
+```
 
 ## 目录模型
 
@@ -69,11 +96,14 @@ cp .env.example .env
 SYMPHONY_WORKSPACE_ROOT=/absolute/path/to/symphony-workspaces
 SOURCE_REPO_URL=git@github.com:your-org/your-repo.git
 SOURCE_REPO_REF=main
+SYMPHONY_WORKSPACE_BASELINE_DIR=/absolute/path/to/your/source-repo
 SYMPHONY_LOCAL_INBOX_DIR=./local_tasks/inbox
 SYMPHONY_LOCAL_STATE_DIR=./local_tasks/state
 SYMPHONY_LOCAL_ARCHIVE_DIR=./local_tasks/archive
 SYMPHONY_LOCAL_RESULTS_DIR=./local_tasks/results
 ```
+
+如果你只想保留 clone Hook，而不启用内建累计基线，可以把 `SYMPHONY_WORKSPACE_BASELINE_DIR` 留空。
 
 如果你想保护本地 UI，建议再设置：
 
@@ -95,7 +125,16 @@ cp examples/WORKFLOW.local.md WORKFLOW.md
 - `tracker.kind: local`
 - inbox / archive / state / results 目录配置
 - 通过 `hooks.after_create` 克隆目标仓库
+- 内建 `workspace.seed` / `workspace.sync_back` 基线继承与回写
 - 指导 Codex 最终调用 `task_update` 的 prompt
+
+
+如果设置了 `SYMPHONY_WORKSPACE_BASELINE_DIR`：
+
+- 仓库仍然通过 `hooks.after_create` 完成初始化
+- Symphony 会把该基线目录叠加到每个新建工作区中
+- 当 Codex 用 `task_update(state: Done)` 关闭任务后，Symphony 会把工作区文件同步回基线目录
+- 后续任务会自动从这个更新后的累计基线开始
 
 ### 3. 创建第一个任务
 
@@ -129,8 +168,12 @@ Codex 必须调用：
 
 ## 成功运行时应看到什么
 
+`/issues/<task-id>` 页面现在不仅能看运行中任务，也能看 retrying、ready、blocked 的本地任务状态；同时还会展示该任务最近的运行历史。
+
+
 一次成功的本地运行通常会表现为：
 
+- Dashboard 上会分开展示运行中任务，以及 ready / blocked 的 backlog
 - Dashboard 上出现运行中的任务
 - `SYMPHONY_WORKSPACE_ROOT/<task-id>` 下出现工作区
 - 目标仓库被克隆到该工作区
@@ -139,6 +182,7 @@ Codex 必须调用：
 - 任务文件进入 `local_tasks/archive/`
 - `/history` 页面出现已完成记录
 - `local_tasks/results/<task-id>/` 下出现结果文件
+- 如果启用了基线同步，`Done` 任务的改动会回写到 `SYMPHONY_WORKSPACE_BASELINE_DIR`
 
 ## 结果文件
 
@@ -164,6 +208,7 @@ cat local_tasks/results/hello-endpoint/metadata.json
 
 - 任务文件本身还不能决定仓库或分支
 - 仓库选择仍然来自 `hooks.after_create`
+- 内建 `workspace.seed` / `workspace.sync_back` 已经可以替代额外的 overlay Hook，但它们本身不负责选择仓库
 - 如果后续要做多仓路由，需要在当前 Hook 模型之上再抽象一层
 
 ## 推荐首批任务

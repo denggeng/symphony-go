@@ -218,7 +218,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           <h1 class="headline">symphony-go dashboard</h1>
           <div class="subtle">
             Self-hosted task + Codex orchestration runtime.
-            <span class="dashboard-view">Live snapshot of polling, running issues, and retries.</span>
+            <span class="dashboard-view">Live snapshot of polling, running issues, retries, and backlog.</span>
             <span class="issue-view">Focused view for one running issue.</span>
           </div>
         </div>
@@ -242,6 +242,16 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           <h2>Retry Queue</h2>
           <div id="metric-retrying" class="metric">0</div>
           <div class="muted">Scheduled retries</div>
+        </article>
+        <article class="card">
+          <h2>Ready Queue</h2>
+          <div id="metric-ready" class="metric">0</div>
+          <div class="muted">Ready but not running</div>
+        </article>
+        <article class="card">
+          <h2>Blocked</h2>
+          <div id="metric-blocked" class="metric">0</div>
+          <div class="muted">Waiting on dependencies</div>
         </article>
         <article class="card">
           <h2>Tracker</h2>
@@ -324,6 +334,26 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       </section>
 
       <section class="panel dashboard-view">
+        <h2>Pending Backlog</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Issue</th>
+                <th>Queue</th>
+                <th>State</th>
+                <th>Priority / Order</th>
+                <th>Dependencies</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="backlog-body"></tbody>
+          </table>
+        </div>
+        <div id="backlog-empty" class="empty">No pending backlog items are currently tracked.</div>
+      </section>
+
+      <section class="panel dashboard-view">
         <h2>Recent Runs</h2>
         <div class="table-wrap">
           <table>
@@ -348,23 +378,51 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         <h2 class="issue-title" id="issue-heading">Issue</h2>
         <div class="issue-meta">
           <span id="issue-state" class="tag ok">Unknown</span>
-          <span id="issue-turns" class="tag warn">Turns: 0</span>
-          <span id="issue-runtime" class="tag warn">Runtime: 0s</span>
+          <span id="issue-queue-status" class="tag warn">Queue: unknown</span>
+          <span id="issue-turns" class="tag warn">Turns: —</span>
+          <span id="issue-runtime" class="tag warn">Runtime: —</span>
         </div>
-        <div id="issue-missing" class="empty" style="display:none;">This issue is not in the running set right now.</div>
+        <div id="issue-missing" class="empty" style="display:none;">This issue is not visible in the current running, retry, or backlog snapshots.</div>
         <div id="issue-content">
           <dl class="kv">
+            <dt>Title</dt><dd id="issue-title">—</dd>
             <dt>Issue ID</dt><dd id="issue-id">—</dd>
+            <dt>Queue Detail</dt><dd id="issue-queue-detail">—</dd>
             <dt>Session ID</dt><dd id="issue-session">—</dd>
             <dt>Codex PID</dt><dd id="issue-pid">—</dd>
             <dt>Retry Attempt</dt><dd id="issue-retry">—</dd>
+            <dt>Retry Due</dt><dd id="issue-retry-due">—</dd>
+            <dt>Priority / Order</dt><dd id="issue-priority-order">—</dd>
+            <dt>Dependencies</dt><dd id="issue-dependencies">—</dd>
+            <dt>Blocked By</dt><dd id="issue-blocked-by">—</dd>
             <dt>Last Event</dt><dd id="issue-last-event">—</dd>
             <dt>Last Message</dt><dd id="issue-last-message">—</dd>
             <dt>Last Timestamp</dt><dd id="issue-last-timestamp">—</dd>
+            <dt>Updated At</dt><dd id="issue-updated-at">—</dd>
             <dt>Workspace</dt><dd class="mono" id="issue-workspace">—</dd>
             <dt>Usage</dt><dd id="issue-usage">—</dd>
           </dl>
         </div>
+      </section>
+
+      <section class="panel issue-view">
+        <h2>Recent Runs for Issue</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Finished</th>
+                <th>Runtime</th>
+                <th>Turns</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody id="issue-history-body"></tbody>
+          </table>
+        </div>
+        <div id="issue-history-empty" class="empty">No recent runs recorded for this issue.</div>
       </section>
 
       <div class="footer">
@@ -381,6 +439,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       const refreshButton = document.getElementById('refresh-button');
       const actionStatus = document.getElementById('action-status');
       const errorBanner = document.getElementById('error-banner');
+      let issueHistoryRuns = [];
 
       function formatTime(value) {
         if (!value) return '—';
@@ -396,9 +455,29 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         return seconds + ' s';
       }
 
+      function formatList(values) {
+        if (!Array.isArray(values) || !values.length) return '—';
+        return values.join(', ');
+      }
+
+      function formatPriorityOrder(item) {
+        const priority = item && item.priority !== null && item.priority !== undefined ? item.priority : '—';
+        const order = item && item.order !== null && item.order !== undefined ? item.order : '—';
+        return 'P' + priority + ' / O' + order;
+      }
+
+      function formatUsage(usage) {
+        if (!usage) return '—';
+        const value = usage || {};
+        let usageText = 'input=' + (value.input_tokens || 0) + ', output=' + (value.output_tokens || 0) + ', total=' + (value.total_tokens || 0);
+        if (value.cached_input_tokens) usageText += ', cached=' + value.cached_input_tokens;
+        if (value.reasoning_output_tokens) usageText += ', reasoning=' + value.reasoning_output_tokens;
+        return usageText;
+      }
+
       function statusClass(text) {
         const value = String(text || '').toLowerCase();
-        if (value.includes('fail') || value.includes('error') || value.includes('cancel')) return 'err';
+        if (value.includes('fail') || value.includes('error') || value.includes('cancel') || value.includes('block')) return 'err';
         if (value.includes('wait') || value.includes('retry') || value.includes('progress') || value.includes('continue') || value.includes('stop')) return 'warn';
         return 'ok';
       }
@@ -430,6 +509,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       function renderDashboard(snapshot) {
         const running = snapshot.running || [];
         const retrying = snapshot.retrying || [];
+        const backlog = snapshot.backlog || [];
         const history = snapshot.history || [];
         const config = snapshot.config || {};
         const polling = snapshot.polling || {};
@@ -438,6 +518,10 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
         setText('metric-running', String(running.length));
         setText('metric-retrying', String(retrying.length));
+        const readyCount = backlog.filter(item => item.queue_status === 'ready').length;
+        const blockedCount = backlog.filter(item => item.queue_status === 'blocked').length;
+        setText('metric-ready', String(readyCount));
+        setText('metric-blocked', String(blockedCount));
         const trackerKind = (config.tracker && config.tracker.kind) || '';
         const localConfig = config.local || {};
 
@@ -506,6 +590,30 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           });
         }
 
+        const backlogBody = document.getElementById('backlog-body');
+        const backlogEmpty = document.getElementById('backlog-empty');
+        backlogBody.innerHTML = '';
+        if (!backlog.length) {
+          backlogEmpty.style.display = 'block';
+        } else {
+          backlogEmpty.style.display = 'none';
+          backlog.forEach(item => {
+            const row = document.createElement('tr');
+            const dependencySummary = formatList(item.dependencies);
+            const dependencyDetail = item.blocked_by && item.blocked_by.length
+              ? 'Waiting on ' + item.blocked_by.join(', ')
+              : (item.dependencies && item.dependencies.length ? 'Dependencies satisfied' : 'No dependencies');
+            row.innerHTML = '' +
+              '<td>' + escapeHTML(item.identifier) + '<div class="muted">' + escapeHTML(item.title || '') + '</div></td>' +
+              '<td><span class="tag ' + statusClass(item.queue_status) + '">' + escapeHTML(item.queue_status || 'ready') + '</span></td>' +
+              '<td><span class="tag ' + statusClass(item.state) + '">' + escapeHTML(item.state || 'Unknown') + '</span></td>' +
+              '<td>' + escapeHTML(formatPriorityOrder(item)) + '</td>' +
+              '<td>' + escapeHTML(dependencySummary) + '<div class="muted">' + escapeHTML(dependencyDetail) + '</div></td>' +
+              '<td>' + escapeHTML(formatTime(item.updated_at)) + '</td>';
+            backlogBody.appendChild(row);
+          });
+        }
+
         const historyBody = document.getElementById('history-body');
         const historyEmpty = document.getElementById('history-empty');
         historyBody.innerHTML = '';
@@ -528,49 +636,110 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           });
         }
 
-        renderIssue(snapshot);
+        const selectedHistory = issueHistoryRuns.length ? issueHistoryRuns : history;
+        renderIssue(snapshot, selectedHistory);
       }
 
-      function renderIssue(snapshot) {
+      function renderIssue(snapshot, historyRuns) {
         if (pageKind !== 'issue') return;
         const running = snapshot.running || [];
-        const issue = running.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
+        const retrying = snapshot.retrying || [];
+        const backlog = snapshot.backlog || [];
+        const matchedHistory = (historyRuns || []).filter(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
+        let issue = running.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
+        if (!issue) issue = retrying.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
+        if (!issue) issue = backlog.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
         setText('issue-heading', issueIdentifier || 'Issue');
         const missing = document.getElementById('issue-missing');
         const content = document.getElementById('issue-content');
         if (!issue) {
           missing.style.display = 'block';
+          missing.textContent = matchedHistory.length
+            ? 'This issue is not currently active. Recent runs are shown below.'
+            : 'This issue is not visible in the current running, retry, or backlog snapshots.';
           content.style.display = 'none';
           document.getElementById('issue-state').className = 'tag err';
-          setText('issue-state', 'Not running');
-          setText('issue-turns', 'Turns: 0');
-          setText('issue-runtime', 'Runtime: 0s');
+          document.getElementById('issue-queue-status').className = 'tag err';
+          setText('issue-state', matchedHistory.length ? 'Inactive' : 'Not visible');
+          setText('issue-queue-status', matchedHistory.length ? 'Queue: history only' : 'Queue: unknown');
+          setText('issue-turns', 'Turns: —');
+          setText('issue-runtime', 'Runtime: —');
+          renderIssueHistory(matchedHistory);
           return;
         }
         missing.style.display = 'none';
         content.style.display = 'block';
         const stateNode = document.getElementById('issue-state');
-        stateNode.className = 'tag ' + statusClass(issue.state);
+        const queueNode = document.getElementById('issue-queue-status');
+        stateNode.className = 'tag ' + statusClass(issue.state || issue.queue_status);
+        queueNode.className = 'tag ' + statusClass(issue.queue_status || issue.state);
         setText('issue-state', issue.state || 'Unknown');
-        setText('issue-turns', 'Turns: ' + issue.turns);
-        setText('issue-runtime', 'Runtime: ' + issue.runtime_seconds + 's');
-        setText('issue-heading', issue.identifier);
+        setText('issue-queue-status', 'Queue: ' + (issue.queue_status || 'unknown'));
+        setText('issue-turns', 'Turns: ' + (issue.turns !== undefined && issue.turns !== null ? issue.turns : '—'));
+        setText('issue-runtime', 'Runtime: ' + (issue.runtime_seconds !== undefined && issue.runtime_seconds !== null ? (issue.runtime_seconds + 's') : '—'));
+        setText('issue-heading', issue.identifier || issueIdentifier);
+        setText('issue-title', issue.title || '—');
         setText('issue-id', issue.issue_id || '—');
         setText('issue-session', issue.session_id || '—');
         setText('issue-pid', issue.codex_app_server_pid || '—');
-        setText('issue-retry', String(issue.retry_attempt ?? 0));
+        setText('issue-retry', String(issue.retry_attempt ?? issue.attempt ?? 0));
+        setText('issue-retry-due', issue.due_at ? (formatTime(issue.due_at) + ' (' + formatMs(issue.due_in_ms) + ')') : '—');
+        setText('issue-priority-order', formatPriorityOrder(issue));
+        setText('issue-dependencies', formatList(issue.dependencies));
+        setText('issue-blocked-by', formatList(issue.blocked_by));
+        const queueDetail = issue.blocked_by && issue.blocked_by.length
+          ? 'Waiting on ' + issue.blocked_by.join(', ')
+          : (issue.queue_status === 'ready'
+            ? 'Ready for dispatch'
+            : (issue.queue_status === 'retrying'
+              ? (issue.continuation ? 'Continuation retry scheduled' : 'Failure retry scheduled')
+              : (issue.queue_status === 'running' ? 'Currently executing' : '—')));
+        setText('issue-queue-detail', queueDetail);
         setText('issue-last-event', issue.last_event || '—');
-        setText('issue-last-message', issue.last_message || '—');
+        setText('issue-last-message', issue.last_message || issue.error || '—');
         setText('issue-last-timestamp', formatTime(issue.last_timestamp));
+        setText('issue-updated-at', formatTime(issue.updated_at));
         setText('issue-workspace', issue.workspace_path || '—');
-        const usage = issue.usage || {};
-        setText('issue-usage', 'input=' + (usage.input_tokens || 0) + ', output=' + (usage.output_tokens || 0) + ', total=' + (usage.total_tokens || 0));
+        setText('issue-usage', formatUsage(issue.usage));
+        renderIssueHistory(matchedHistory);
+      }
+
+      function renderIssueHistory(historyRuns) {
+        if (pageKind !== 'issue') return;
+        const body = document.getElementById('issue-history-body');
+        const empty = document.getElementById('issue-history-empty');
+        body.innerHTML = '';
+        if (!historyRuns || !historyRuns.length) {
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        historyRuns.slice(0, 10).forEach(item => {
+          const row = document.createElement('tr');
+          const runLink = '/history/' + encodeURIComponent(item.run_id);
+          row.innerHTML = '' +
+            '<td><a href="' + runLink + '">' + escapeHTML(item.run_id) + '</a></td>' +
+            '<td><span class="tag ' + statusClass(item.status) + '">' + escapeHTML(item.status || '—') + '</span></td>' +
+            '<td>' + escapeHTML(formatTime(item.finished_at)) + '</td>' +
+            '<td>' + escapeHTML(item.runtime_seconds) + 's</td>' +
+            '<td>' + escapeHTML(item.turns) + '</td>' +
+            '<td>' + escapeHTML(item.last_message || item.error || '—') + '</td>';
+          body.appendChild(row);
+        });
       }
 
       async function loadSnapshot() {
         const response = await fetch('/api/v1/state');
         if (!response.ok) throw new Error('Failed to load snapshot');
         return response.json();
+      }
+
+      async function loadHistory() {
+        const response = await fetch('/api/v1/history');
+        if (!response.ok) throw new Error('Failed to load history');
+        const payload = await response.json();
+        issueHistoryRuns = payload.runs || [];
+        return issueHistoryRuns;
       }
 
       async function refreshNow() {
@@ -591,8 +760,16 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
       (async function init() {
         try {
-          const snapshot = await loadSnapshot();
-          renderDashboard(snapshot);
+          if (pageKind === 'issue') {
+            const [snapshot] = await Promise.all([
+              loadSnapshot(),
+              loadHistory().catch(() => [])
+            ]);
+            renderDashboard(snapshot);
+          } else {
+            const snapshot = await loadSnapshot();
+            renderDashboard(snapshot);
+          }
           actionStatus.textContent = 'Live updates connected';
         } catch (error) {
           actionStatus.textContent = 'Initial load failed';
@@ -615,8 +792,16 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setInterval(async () => {
           if (document.hidden) return;
           try {
-            const snapshot = await loadSnapshot();
-            renderDashboard(snapshot);
+            if (pageKind === 'issue') {
+              const [snapshot] = await Promise.all([
+                loadSnapshot(),
+                loadHistory().catch(() => issueHistoryRuns)
+              ]);
+              renderDashboard(snapshot);
+            } else {
+              const snapshot = await loadSnapshot();
+              renderDashboard(snapshot);
+            }
           } catch (_error) {
           }
         }, 15000);

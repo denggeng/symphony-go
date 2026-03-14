@@ -102,3 +102,89 @@ func TestFromWorkflowRejectsMissingExpandedWorkspaceRoot(t *testing.T) {
 		t.Fatalf("expected validation error for missing expanded workspace root")
 	}
 }
+
+func TestFromWorkflowAppliesWorkspaceSyncBackDefaults(t *testing.T) {
+	t.Parallel()
+
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"workspace": map[string]any{
+			"sync_back": map[string]any{"path": filepath.Join(t.TempDir(), "baseline")},
+		},
+	}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if got, want := cfg.Workspace.SyncBack.OnStates, []string{"Done"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("unexpected sync_back.on_states: got %v want %v", got, want)
+	}
+	if !cfg.ShouldSyncBackState("Done") {
+		t.Fatalf("expected Done to be sync-back eligible")
+	}
+	if cfg.ShouldSyncBackState("Blocked") {
+		t.Fatalf("expected Blocked to skip sync-back")
+	}
+	if got := cfg.Workspace.SyncBack.Excludes; len(got) < 2 || got[0] != ".git" || got[1] != "tmp" {
+		t.Fatalf("unexpected sync_back excludes: %v", got)
+	}
+}
+
+func TestFromWorkflowExpandsWorkspaceSeedAndSyncBackPaths(t *testing.T) {
+	t.Setenv("SYMPHONY_WORKSPACE_SEED_DIR", filepath.Join(t.TempDir(), "seed"))
+	t.Setenv("SYMPHONY_WORKSPACE_SYNC_DIR", filepath.Join(t.TempDir(), "sync"))
+
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"workspace": map[string]any{
+			"seed": map[string]any{
+				"path": "$SYMPHONY_WORKSPACE_SEED_DIR",
+				"excludes": []any{"dist"},
+			},
+			"sync_back": map[string]any{
+				"path": "$SYMPHONY_WORKSPACE_SYNC_DIR",
+				"on_states": []any{"Done", "Closed"},
+				"excludes": []any{"build"},
+			},
+		},
+	}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if want := os.Getenv("SYMPHONY_WORKSPACE_SEED_DIR"); cfg.Workspace.Seed.Path != want {
+		t.Fatalf("unexpected seed path: got %q want %q", cfg.Workspace.Seed.Path, want)
+	}
+	if want := os.Getenv("SYMPHONY_WORKSPACE_SYNC_DIR"); cfg.Workspace.SyncBack.Path != want {
+		t.Fatalf("unexpected sync_back path: got %q want %q", cfg.Workspace.SyncBack.Path, want)
+	}
+	if got := cfg.Workspace.Seed.Excludes; len(got) != 3 || got[0] != ".git" || got[1] != "tmp" || got[2] != "dist" {
+		t.Fatalf("unexpected seed excludes: %v", got)
+	}
+	if got := cfg.Workspace.SyncBack.Excludes; len(got) != 3 || got[0] != ".git" || got[1] != "tmp" || got[2] != "build" {
+		t.Fatalf("unexpected sync_back excludes: %v", got)
+	}
+	summary := cfg.Summary()
+	if summary.Workspace.Seed == nil || summary.Workspace.Seed.Path != cfg.Workspace.Seed.Path {
+		t.Fatalf("expected workspace seed summary: %#v", summary.Workspace)
+	}
+	if summary.Workspace.SyncBack == nil || summary.Workspace.SyncBack.Path != cfg.Workspace.SyncBack.Path {
+		t.Fatalf("expected workspace sync_back summary: %#v", summary.Workspace)
+	}
+}
+
+func TestFromWorkflowRejectsWorkspaceSyncBackStatesWithoutPath(t *testing.T) {
+	t.Parallel()
+
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"workspace": map[string]any{
+			"sync_back": map[string]any{
+				"on_states": []any{"Done"},
+			},
+		},
+	}}
+	if _, err := FromWorkflow(definition); err == nil {
+		t.Fatalf("expected validation error")
+	}
+}

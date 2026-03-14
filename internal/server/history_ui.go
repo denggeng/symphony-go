@@ -273,7 +273,10 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
 
       function usageText(usage) {
         const value = usage || {};
-        return 'input=' + (value.input_tokens || 0) + ', output=' + (value.output_tokens || 0) + ', total=' + (value.total_tokens || 0);
+        let text = 'input=' + (value.input_tokens || 0) + ', output=' + (value.output_tokens || 0) + ', total=' + (value.total_tokens || 0);
+        if (value.cached_input_tokens) text += ', cached=' + value.cached_input_tokens;
+        if (value.reasoning_output_tokens) text += ', reasoning=' + value.reasoning_output_tokens;
+        return text;
       }
 
       function statusClass(text) {

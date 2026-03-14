@@ -65,6 +65,9 @@ func (runner *Runner) Run(ctx context.Context, issue domain.Issue, attempt int, 
 		}
 		issue = refreshedIssue
 		if !continueIssue {
+			if err := runner.workspace.SyncBack(context.Background(), ws.Path, refreshedIssue); err != nil {
+				return Result{WorkspacePath: ws.Path, Turns: turnNumber, Continuation: false}, err
+			}
 			return Result{WorkspacePath: ws.Path, Turns: turnNumber, Continuation: false}, nil
 		}
 		if turnNumber == maxTurns {

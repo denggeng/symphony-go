@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/denggeng/symphony-go/internal/config"
+	"github.com/denggeng/symphony-go/internal/domain"
 	"github.com/denggeng/symphony-go/internal/tracker"
 )
 
@@ -34,6 +36,14 @@ func writeTaskFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write task file: %v", err)
 	}
+}
+
+func issueIdentifiers(issues []domain.Issue) []string {
+	identifiers := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		identifiers = append(identifiers, issue.Identifier)
+	}
+	return identifiers
 }
 
 func TestFetchCandidateIssuesReadsInboxMarkdown(t *testing.T) {
@@ -62,6 +72,181 @@ Add a /hello endpoint and test it.
 	}
 	if issues[0].Description != "Add a /hello endpoint and test it." {
 		t.Fatalf("unexpected description: %q", issues[0].Description)
+	}
+}
+
+func TestFetchCandidateIssuesOrdersByPriorityThenOrder(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfig(root), slog.Default())
+
+	writeTaskFile(t, filepath.Join(root, "inbox", "fallback.md"), `---
+title: Fallback cleanup
+state: To Do
+---
+Tidy up deferred work.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "backend.md"), `---
+id: backend
+state: To Do
+priority: 2
+order: 20
+---
+Implement the backend path.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "bootstrap.md"), `---
+id: bootstrap
+state: To Do
+priority: 1
+order: 30
+---
+Bootstrap the service.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "schema.md"), `---
+id: schema
+state: To Do
+priority: 1
+order: 10
+---
+Define the schema first.
+`)
+
+	issues, err := client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues: %v", err)
+	}
+
+	want := []string{"schema", "bootstrap", "backend", "fallback"}
+	if got := issueIdentifiers(issues); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected issue order: got %v want %v", got, want)
+	}
+}
+
+func TestFetchCandidateIssuesBlocksUntilDependenciesAreDone(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfig(root), slog.Default())
+
+	writeTaskFile(t, filepath.Join(root, "inbox", "setup-db.md"), `---
+id: setup-db
+state: To Do
+priority: 1
+order: 10
+---
+Prepare database migrations.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "api.md"), `---
+id: api
+title: Build API layer
+state: To Do
+priority: 1
+order: 20
+depends_on:
+  - setup-db
+---
+Build the API after the database task is complete.
+`)
+
+	issues, err := client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues: %v", err)
+	}
+	if got, want := issueIdentifiers(issues), []string{"setup-db"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected ready issue set before dependency completion: got %v want %v", got, want)
+	}
+
+	err = client.UpdateTask(context.Background(), "setup-db", tracker.TaskUpdate{State: "Done", Summary: "Database setup complete."})
+	if err != nil {
+		t.Fatalf("mark dependency done: %v", err)
+	}
+
+	issues, err = client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues after dependency completion: %v", err)
+	}
+	if got, want := issueIdentifiers(issues), []string{"api"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected ready issue set after dependency completion: got %v want %v", got, want)
+	}
+}
+
+func TestFetchCandidateIssuesKeepsDependentsBlockedOnBlockedDependencies(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfig(root), slog.Default())
+
+	writeTaskFile(t, filepath.Join(root, "inbox", "setup-db.md"), `---
+id: setup-db
+state: To Do
+---
+Prepare database migrations.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "api.md"), `---
+id: api
+state: To Do
+depends_on: setup-db
+---
+Build the API after the database task is complete.
+`)
+
+	err := client.UpdateTask(context.Background(), "setup-db", tracker.TaskUpdate{State: "Blocked", Summary: "Database migration is blocked."})
+	if err != nil {
+		t.Fatalf("mark dependency blocked: %v", err)
+	}
+
+	issues, err := client.FetchCandidateIssues(context.Background())
+	if err != nil {
+		t.Fatalf("fetch candidate issues: %v", err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("expected no ready issues when dependency is blocked, got %v", issueIdentifiers(issues))
+	}
+}
+
+func TestFetchIssuesByStatesIncludesBlockedDependencies(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	client := New(testConfig(root), slog.Default())
+
+	writeTaskFile(t, filepath.Join(root, "inbox", "setup-db.md"), `---
+id: setup-db
+state: To Do
+---
+Prepare database migrations.
+`)
+	writeTaskFile(t, filepath.Join(root, "inbox", "api.md"), `---
+id: api
+state: To Do
+depends_on:
+  - setup-db
+  - auth
+---
+Build the API after the database task is complete.
+`)
+	writeTaskFile(t, filepath.Join(root, "archive", "auth.md"), `---
+id: auth
+state: Done
+---
+Bootstrap authentication.
+`)
+
+	issues, err := client.FetchIssuesByStates(context.Background(), []string{"To Do"})
+	if err != nil {
+		t.Fatalf("fetch issues by states: %v", err)
+	}
+	issueByID := make(map[string]domain.Issue, len(issues))
+	for _, issue := range issues {
+		issueByID[issue.Identifier] = issue
+	}
+
+	api := issueByID["api"]
+	if got, want := api.Dependencies, []string{"setup-db", "auth"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected dependencies: got %v want %v", got, want)
+	}
+	if got, want := api.BlockedBy, []string{"setup-db"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected blocked_by: got %v want %v", got, want)
+	}
+	if blocked := issueByID["setup-db"].BlockedBy; len(blocked) != 0 {
+		t.Fatalf("expected dependency task to have no blockers, got %v", blocked)
 	}
 }
 

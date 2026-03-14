@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -53,6 +54,7 @@ type Controller struct {
 	running        map[string]*runningEntry
 	claimed        map[string]struct{}
 	retries        map[string]*retryEntry
+	backlog        []BacklogSnapshot
 	history        []*historyEntry
 	historyByID    map[string]*historyEntry
 	nextRunSeq     int64
@@ -81,6 +83,7 @@ type runningEntry struct {
 }
 
 type retryEntry struct {
+	Issue        domain.Issue
 	IssueID      string
 	Identifier   string
 	Attempt      int
@@ -102,6 +105,7 @@ type Snapshot struct {
 	Polling  PollingSnapshot      `json:"polling"`
 	Running  []RunningSnapshot    `json:"running"`
 	Retrying []RetryingSnapshot   `json:"retrying"`
+	Backlog  []BacklogSnapshot    `json:"backlog"`
 	History  []RunHistorySnapshot `json:"history"`
 }
 
@@ -133,6 +137,12 @@ type RunningSnapshot struct {
 	Identifier     string      `json:"identifier"`
 	State          string      `json:"state"`
 	Title          string      `json:"title,omitempty"`
+	QueueStatus    string      `json:"queue_status"`
+	Priority       *int        `json:"priority,omitempty"`
+	Order          *int        `json:"order,omitempty"`
+	Dependencies   []string    `json:"dependencies,omitempty"`
+	BlockedBy      []string    `json:"blocked_by,omitempty"`
+	UpdatedAt      *time.Time  `json:"updated_at,omitempty"`
 	WorkspacePath  string      `json:"workspace_path"`
 	SessionID      string      `json:"session_id,omitempty"`
 	CodexPID       string      `json:"codex_app_server_pid,omitempty"`
@@ -150,13 +160,66 @@ type RunningSnapshot struct {
 }
 
 type RetryingSnapshot struct {
-	IssueID      string    `json:"issue_id"`
-	Identifier   string    `json:"identifier"`
-	Attempt      int       `json:"attempt"`
-	DueAt        time.Time `json:"due_at"`
-	DueInMs      int64     `json:"due_in_ms"`
-	Error        string    `json:"error,omitempty"`
-	Continuation bool      `json:"continuation"`
+	IssueID      string     `json:"issue_id"`
+	Identifier   string     `json:"identifier"`
+	Title        string     `json:"title,omitempty"`
+	State        string     `json:"state,omitempty"`
+	QueueStatus  string     `json:"queue_status"`
+	Priority     *int       `json:"priority,omitempty"`
+	Order        *int       `json:"order,omitempty"`
+	Dependencies []string   `json:"dependencies,omitempty"`
+	BlockedBy    []string   `json:"blocked_by,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
+	Attempt      int        `json:"attempt"`
+	DueAt        time.Time  `json:"due_at"`
+	DueInMs      int64      `json:"due_in_ms"`
+	Error        string     `json:"error,omitempty"`
+	Continuation bool       `json:"continuation"`
+}
+
+type BacklogSnapshot struct {
+	IssueID      string     `json:"issue_id"`
+	Identifier   string     `json:"identifier"`
+	Title        string     `json:"title,omitempty"`
+	State        string     `json:"state"`
+	QueueStatus  string     `json:"queue_status"`
+	Priority     *int       `json:"priority,omitempty"`
+	Order        *int       `json:"order,omitempty"`
+	Dependencies []string   `json:"dependencies,omitempty"`
+	BlockedBy    []string   `json:"blocked_by,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
+}
+
+type IssueDetailSnapshot struct {
+	IssueID        string      `json:"issue_id"`
+	Identifier     string      `json:"identifier"`
+	Title          string      `json:"title,omitempty"`
+	State          string      `json:"state,omitempty"`
+	QueueStatus    string      `json:"queue_status"`
+	Priority       *int        `json:"priority,omitempty"`
+	Order          *int        `json:"order,omitempty"`
+	Dependencies   []string    `json:"dependencies,omitempty"`
+	BlockedBy      []string    `json:"blocked_by,omitempty"`
+	UpdatedAt      *time.Time  `json:"updated_at,omitempty"`
+	RunID          string      `json:"run_id,omitempty"`
+	WorkspacePath  string      `json:"workspace_path,omitempty"`
+	SessionID      string      `json:"session_id,omitempty"`
+	CodexPID       string      `json:"codex_app_server_pid,omitempty"`
+	Turns          int         `json:"turns"`
+	RetryAttempt   int         `json:"retry_attempt"`
+	StartedAt      *time.Time  `json:"started_at,omitempty"`
+	RuntimeSeconds int         `json:"runtime_seconds"`
+	DueAt          *time.Time  `json:"due_at,omitempty"`
+	DueInMs        int64       `json:"due_in_ms,omitempty"`
+	LastEvent      string      `json:"last_event,omitempty"`
+	LastMessage    string      `json:"last_message,omitempty"`
+	LastTimestamp  *time.Time  `json:"last_timestamp,omitempty"`
+	Usage          agent.Usage `json:"usage"`
+	StopRequested  bool        `json:"stop_requested"`
+	StopReason     string      `json:"stop_reason,omitempty"`
+	EventCount     int         `json:"event_count"`
+	Error          string      `json:"error,omitempty"`
+	Continuation   bool        `json:"continuation"`
 }
 
 // RunEventSnapshot is a sanitized, UI-safe event emitted during one run.
@@ -307,6 +370,12 @@ func (controller *Controller) Snapshot() Snapshot {
 			Identifier:     entry.Identifier,
 			State:          entry.Issue.State,
 			Title:          entry.Issue.Title,
+			QueueStatus:    "running",
+			Priority:       entry.Issue.Priority,
+			Order:          entry.Issue.Order,
+			Dependencies:   append([]string(nil), entry.Issue.Dependencies...),
+			BlockedBy:      append([]string(nil), entry.Issue.BlockedBy...),
+			UpdatedAt:      entry.Issue.UpdatedAt,
 			WorkspacePath:  entry.WorkspacePath,
 			SessionID:      entry.SessionID,
 			CodexPID:       entry.CodexPID,
@@ -328,6 +397,14 @@ func (controller *Controller) Snapshot() Snapshot {
 		retrying = append(retrying, RetryingSnapshot{
 			IssueID:      entry.IssueID,
 			Identifier:   entry.Identifier,
+			Title:        entry.Issue.Title,
+			State:        entry.Issue.State,
+			QueueStatus:  "retrying",
+			Priority:     entry.Issue.Priority,
+			Order:        entry.Issue.Order,
+			Dependencies: append([]string(nil), entry.Issue.Dependencies...),
+			BlockedBy:    append([]string(nil), entry.Issue.BlockedBy...),
+			UpdatedAt:    entry.Issue.UpdatedAt,
 			Attempt:      entry.Attempt,
 			DueAt:        entry.DueAt,
 			DueInMs:      maxInt64(0, entry.DueAt.Sub(now).Milliseconds()),
@@ -347,6 +424,7 @@ func (controller *Controller) Snapshot() Snapshot {
 		}
 		return cmp.Compare(left.Identifier, right.Identifier)
 	})
+	backlog := append([]BacklogSnapshot(nil), controller.backlog...)
 	return Snapshot{
 		Service:  ServiceSnapshot{Name: "symphony-go", Version: "dev", StartedAt: controller.startedAt, Uptime: now.Sub(controller.startedAt).Round(time.Second).String()},
 		Workflow: WorkflowSnapshot{Path: controller.workflow.Path, LoadedAt: controller.startedAt, HasFrontMatter: controller.workflow.HasFrontMatter, PromptLength: len(controller.workflow.Prompt)},
@@ -354,40 +432,31 @@ func (controller *Controller) Snapshot() Snapshot {
 		Polling:  PollingSnapshot{Checking: controller.pollInProgress, PollIntervalMs: controller.cfg.Orchestrator.PollIntervalMs, NextPollAt: controller.nextPollAt, LastPollAt: controller.lastPollAt, LastError: controller.lastError},
 		Running:  running,
 		Retrying: retrying,
+		Backlog:  backlog,
 		History:  controller.historySnapshotsLocked(maxSnapshotHistoryEntries),
 	}
 }
 
-func (controller *Controller) IssueSnapshot(identifier string) (RunningSnapshot, bool) {
+func (controller *Controller) IssueSnapshot(identifier string) (IssueDetailSnapshot, bool) {
 	controller.mu.RLock()
 	defer controller.mu.RUnlock()
+	now := time.Now().UTC()
 	for issueID, entry := range controller.running {
 		if entry.Identifier == identifier || issueID == identifier {
-			now := time.Now().UTC()
-			return RunningSnapshot{
-				RunID:          entry.RunID,
-				IssueID:        issueID,
-				Identifier:     entry.Identifier,
-				State:          entry.Issue.State,
-				Title:          entry.Issue.Title,
-				WorkspacePath:  entry.WorkspacePath,
-				SessionID:      entry.SessionID,
-				CodexPID:       entry.CodexPID,
-				Turns:          entry.Turns,
-				RetryAttempt:   entry.RetryAttempt,
-				StartedAt:      entry.StartedAt,
-				RuntimeSeconds: int(now.Sub(entry.StartedAt).Seconds()),
-				LastEvent:      entry.LastEvent,
-				LastMessage:    entry.LastMessage,
-				LastTimestamp:  entry.LastTimestamp,
-				Usage:          entry.Usage,
-				StopRequested:  entry.StopRequested,
-				StopReason:     entry.StopReason,
-				EventCount:     len(entry.Events),
-			}, true
+			return issueDetailFromRunningEntry(issueID, entry, now), true
 		}
 	}
-	return RunningSnapshot{}, false
+	for issueID, entry := range controller.retries {
+		if entry.Identifier == identifier || issueID == identifier {
+			return issueDetailFromRetryEntry(issueID, entry, now), true
+		}
+	}
+	for _, entry := range controller.backlog {
+		if entry.Identifier == identifier || entry.IssueID == identifier {
+			return issueDetailFromBacklogSnapshot(entry), true
+		}
+	}
+	return IssueDetailSnapshot{}, false
 }
 
 func (controller *Controller) History() []RunHistorySnapshot {
@@ -432,12 +501,34 @@ func (controller *Controller) runPollCycle(reason string) {
 	if err := controller.reconcileRunningIssues(ctx); err != nil {
 		controller.setLastError(err)
 	}
+
+	trackerKind := ""
+	if controller.tracker != nil {
+		trackerKind = controller.tracker.Kind()
+	}
+	var err error
+	activeLoaded := false
+	activeIssues := []domain.Issue(nil)
+	if trackerKind == "local" {
+		activeIssues, err = controller.tracker.FetchIssuesByStates(ctx, controller.cfg.ActiveStates())
+		if err != nil {
+			controller.setLastError(err)
+		} else {
+			activeLoaded = true
+		}
+	} else {
+		controller.clearBacklogSnapshot()
+	}
+
 	issues, err := controller.tracker.FetchCandidateIssues(ctx)
 	if err != nil {
 		controller.setLastError(err)
 	} else {
 		domain.SortIssues(issues)
 		controller.dispatchIssues(ctx, issues)
+	}
+	if activeLoaded {
+		controller.updateBacklogSnapshot(activeIssues)
 	}
 
 	controller.mu.Lock()
@@ -464,6 +555,35 @@ func (controller *Controller) cleanupStartup(ctx context.Context) {
 			controller.logger.Warn("failed to remove terminal workspace", slog.String("issue_identifier", issue.Identifier), slog.Any("error", err))
 		}
 	}
+}
+
+func (controller *Controller) clearBacklogSnapshot() {
+	controller.mu.Lock()
+	controller.backlog = nil
+	controller.mu.Unlock()
+}
+
+func (controller *Controller) updateBacklogSnapshot(activeIssues []domain.Issue) {
+	ready := make([]BacklogSnapshot, 0, len(activeIssues))
+	blocked := make([]BacklogSnapshot, 0, len(activeIssues))
+
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	for _, issue := range activeIssues {
+		if _, ok := controller.running[issue.ID]; ok {
+			continue
+		}
+		if _, ok := controller.retries[issue.ID]; ok {
+			continue
+		}
+		snapshot := backlogSnapshotFromIssue(issue)
+		if len(snapshot.BlockedBy) > 0 {
+			blocked = append(blocked, snapshot)
+			continue
+		}
+		ready = append(ready, snapshot)
+	}
+	controller.backlog = append(ready, blocked...)
 }
 
 func (controller *Controller) reconcileRunningIssues(ctx context.Context) error {
@@ -582,12 +702,19 @@ func (controller *Controller) onRunFinished(issue domain.Issue, result runner.Re
 	if stopRequested {
 		controller.releaseClaim(issue.ID)
 		if stopReason == "terminal_state" {
-			_ = controller.workspace.RemoveIssueWorkspaces(context.Background(), issue.Identifier)
+			if syncErr := controller.syncBackWorkspace(entry.Issue, entry.WorkspacePath); syncErr == nil {
+				_ = controller.workspace.RemoveIssueWorkspaces(context.Background(), entry.Identifier)
+			}
 		}
 		return
 	}
 
 	if err != nil {
+		if errors.Is(err, workspace.ErrWorkspaceSyncBackFailed) {
+			controller.logger.Warn("workspace sync-back failed", slog.String("issue_identifier", entry.Identifier), slog.String("workspace", entry.WorkspacePath), slog.Any("error", err))
+			controller.releaseClaim(issue.ID)
+			return
+		}
 		controller.scheduleRetry(issue, entry.RetryAttempt+1, false, err.Error())
 		return
 	}
@@ -600,6 +727,17 @@ func (controller *Controller) onRunFinished(issue domain.Issue, result runner.Re
 	controller.releaseClaim(issue.ID)
 }
 
+func (controller *Controller) syncBackWorkspace(issue domain.Issue, workspacePath string) error {
+	if controller.workspace == nil {
+		return nil
+	}
+	if err := controller.workspace.SyncBack(context.Background(), workspacePath, issue); err != nil {
+		controller.logger.Warn("workspace sync-back failed", slog.String("issue_identifier", issue.Identifier), slog.String("workspace", workspacePath), slog.Any("error", err))
+		return err
+	}
+	return nil
+}
+
 func (controller *Controller) scheduleRetry(issue domain.Issue, attempt int, continuation bool, reason string) {
 	delay := retryDelay(controller.cfg, attempt, continuation)
 	dueAt := time.Now().UTC().Add(delay)
@@ -607,7 +745,7 @@ func (controller *Controller) scheduleRetry(issue domain.Issue, attempt int, con
 	if old := controller.retries[issue.ID]; old != nil && old.Timer != nil {
 		old.Timer.Stop()
 	}
-	entry := &retryEntry{IssueID: issue.ID, Identifier: issue.Identifier, Attempt: attempt, DueAt: dueAt, Error: reason, Continuation: continuation}
+	entry := &retryEntry{Issue: issue, IssueID: issue.ID, Identifier: issue.Identifier, Attempt: attempt, DueAt: dueAt, Error: reason, Continuation: continuation}
 	entry.Timer = time.AfterFunc(delay, func() { controller.handleRetryDue(issue, attempt, continuation, reason) })
 	controller.retries[issue.ID] = entry
 	controller.mu.Unlock()
@@ -679,6 +817,93 @@ func retryDelay(cfg config.Config, attempt int, continuation bool) time.Duration
 	return delay
 }
 
+func issueDetailFromRunningEntry(issueID string, entry *runningEntry, now time.Time) IssueDetailSnapshot {
+	startedAt := entry.StartedAt
+	return IssueDetailSnapshot{
+		IssueID:        issueID,
+		Identifier:     entry.Identifier,
+		Title:          entry.Issue.Title,
+		State:          entry.Issue.State,
+		QueueStatus:    "running",
+		Priority:       entry.Issue.Priority,
+		Order:          entry.Issue.Order,
+		Dependencies:   append([]string(nil), entry.Issue.Dependencies...),
+		BlockedBy:      append([]string(nil), entry.Issue.BlockedBy...),
+		UpdatedAt:      entry.Issue.UpdatedAt,
+		RunID:          entry.RunID,
+		WorkspacePath:  entry.WorkspacePath,
+		SessionID:      entry.SessionID,
+		CodexPID:       entry.CodexPID,
+		Turns:          entry.Turns,
+		RetryAttempt:   entry.RetryAttempt,
+		StartedAt:      &startedAt,
+		RuntimeSeconds: int(now.Sub(entry.StartedAt).Seconds()),
+		LastEvent:      entry.LastEvent,
+		LastMessage:    entry.LastMessage,
+		LastTimestamp:  entry.LastTimestamp,
+		Usage:          entry.Usage,
+		StopRequested:  entry.StopRequested,
+		StopReason:     entry.StopReason,
+		EventCount:     len(entry.Events),
+	}
+}
+
+func issueDetailFromRetryEntry(issueID string, entry *retryEntry, now time.Time) IssueDetailSnapshot {
+	dueAt := entry.DueAt
+	return IssueDetailSnapshot{
+		IssueID:      issueID,
+		Identifier:   entry.Identifier,
+		Title:        entry.Issue.Title,
+		State:        entry.Issue.State,
+		QueueStatus:  "retrying",
+		Priority:     entry.Issue.Priority,
+		Order:        entry.Issue.Order,
+		Dependencies: append([]string(nil), entry.Issue.Dependencies...),
+		BlockedBy:    append([]string(nil), entry.Issue.BlockedBy...),
+		UpdatedAt:    entry.Issue.UpdatedAt,
+		RetryAttempt: entry.Attempt,
+		DueAt:        &dueAt,
+		DueInMs:      maxInt64(0, entry.DueAt.Sub(now).Milliseconds()),
+		LastMessage:  entry.Error,
+		Error:        entry.Error,
+		Continuation: entry.Continuation,
+	}
+}
+
+func issueDetailFromBacklogSnapshot(entry BacklogSnapshot) IssueDetailSnapshot {
+	return IssueDetailSnapshot{
+		IssueID:      entry.IssueID,
+		Identifier:   entry.Identifier,
+		Title:        entry.Title,
+		State:        entry.State,
+		QueueStatus:  entry.QueueStatus,
+		Priority:     entry.Priority,
+		Order:        entry.Order,
+		Dependencies: append([]string(nil), entry.Dependencies...),
+		BlockedBy:    append([]string(nil), entry.BlockedBy...),
+		UpdatedAt:    entry.UpdatedAt,
+	}
+}
+
+func backlogSnapshotFromIssue(issue domain.Issue) BacklogSnapshot {
+	queueStatus := "ready"
+	if len(issue.BlockedBy) > 0 {
+		queueStatus = "blocked"
+	}
+	return BacklogSnapshot{
+		IssueID:      issue.ID,
+		Identifier:   issue.Identifier,
+		Title:        issue.Title,
+		State:        issue.State,
+		QueueStatus:  queueStatus,
+		Priority:     issue.Priority,
+		Order:        issue.Order,
+		Dependencies: append([]string(nil), issue.Dependencies...),
+		BlockedBy:    append([]string(nil), issue.BlockedBy...),
+		UpdatedAt:    issue.UpdatedAt,
+	}
+}
+
 func maxInt64(left int64, right int64) int64 {
 	if left > right {
 		return left
@@ -697,8 +922,9 @@ func buildRunHistorySnapshot(entry *runningEntry, result runner.Result, err erro
 	}
 	status := runStatus(entry.StopRequested, entry.StopReason, result.Continuation, err)
 	runtimeSeconds := int(finishedAt.Sub(entry.StartedAt).Seconds())
+	suppressError := shouldSuppressRunError(entry.StopRequested, entry.StopReason, err)
 	message := entry.LastMessage
-	if message == "" && err != nil {
+	if message == "" && err != nil && !suppressError {
 		message = err.Error()
 	}
 	history := RunHistorySnapshot{
@@ -725,10 +951,26 @@ func buildRunHistorySnapshot(entry *runningEntry, result runner.Result, err erro
 		StopReason:     entry.StopReason,
 		EventCount:     len(entry.Events),
 	}
-	if err != nil {
+	if err != nil && !suppressError {
 		history.Error = err.Error()
 	}
 	return history
+}
+
+func shouldSuppressRunError(stopRequested bool, stopReason string, err error) bool {
+	if err == nil {
+		return false
+	}
+	if stopReason == "terminal_state" {
+		return true
+	}
+	if stopRequested && errors.Is(err, context.Canceled) {
+		return true
+	}
+	if stopRequested && strings.Contains(strings.ToLower(err.Error()), "context canceled") {
+		return true
+	}
+	return false
 }
 
 func runStatus(stopRequested bool, stopReason string, continuation bool, err error) string {

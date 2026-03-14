@@ -116,6 +116,26 @@ go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 - `docs/zh-CN/jira.md`
 - `docs/zh-CN/closed-loop.md`
 
+## 理解反馈与调度
+
+如果你想看清下面这些问题：
+
+- `Codex` 怎么把运行状态反馈给 `Symphony`
+- `Symphony` 怎么决定继续、停止或重试
+- 本地任务模式和 Jira 模式的闭环差异
+
+可以直接阅读：
+
+- `docs/zh-CN/codex-feedback-flow.md`
+
+## `llm-gateway` 实战模板
+
+如果你想直接参考“用本地 Markdown 任务持续驱动一个新项目”的落地模板，可以看：
+
+- `examples/WORKFLOW.llm-gateway.local.md` — 面向 `llm-gateway` 的本地工作流模板
+- `.env.llm-gateway.example` — 配套环境变量示例
+- `docs/zh-CN/optimization-roadmap.md` — 这次实战暴露出的 Symphony 改进点
+
 ## 配置
 
 运行时配置位于 `WORKFLOW.md`。

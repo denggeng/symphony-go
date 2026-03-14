@@ -7,3 +7,9 @@ dist/
 coverage.out
 *.log
 *.tmp
+/local_tasks/
+/run/
+/runlogs/
+.env.bak.*
+WORKFLOW.md.bak.*
+.llm-gateway-setup-stamp

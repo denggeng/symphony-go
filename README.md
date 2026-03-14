@@ -14,6 +14,7 @@ It is built for teams or individual builders who want an agent orchestration ser
 - expose runtime state through a simple HTTP API and live dashboard
 - keep recent run history and sanitized event logs in memory
 - protect the UI and API with optional HTTP Basic auth
+- switch the built-in dashboard and history pages between English and Chinese
 - run as a self-hosted service with Docker and Compose scaffolding
 
 This project is **not** an official OpenAI implementation.

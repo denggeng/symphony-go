@@ -14,6 +14,7 @@
 - 通过简单的 HTTP API 和实时 Dashboard 暴露运行状态
 - 在内存中保留最近运行历史和脱敏后的事件日志
 - 通过可选的 HTTP Basic Auth 保护 UI 与 API
+- 内建 Dashboard / 历史页面支持中英文切换
 - 通过 Docker / Compose 以自托管方式部署
 
 本项目 **不是** OpenAI 官方实现。

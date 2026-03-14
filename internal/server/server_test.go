@@ -87,6 +87,9 @@ func TestDashboardPageRendersHTML(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "Pending Backlog") {
 		t.Fatalf("expected backlog markup")
 	}
+	if !strings.Contains(response.Body.String(), "language-toggle") {
+		t.Fatalf("expected language toggle markup")
+	}
 }
 
 func TestHistoryPageRendersHTML(t *testing.T) {
@@ -100,6 +103,9 @@ func TestHistoryPageRendersHTML(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "run history") {
 		t.Fatalf("expected history markup")
+	}
+	if !strings.Contains(response.Body.String(), "language-toggle") {
+		t.Fatalf("expected language toggle markup")
 	}
 }
 
@@ -118,6 +124,9 @@ func TestRunHistoryPageRendersHTML(t *testing.T) {
 	}
 	if !strings.Contains(body, `data-run-id="run-123"`) {
 		t.Fatalf("expected run id in html")
+	}
+	if !strings.Contains(body, "language-toggle") {
+		t.Fatalf("expected language toggle markup")
 	}
 }
 

@@ -71,6 +71,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         align-items: center;
         flex-wrap: wrap;
       }
+      .lang-toggle { min-width: 92px; }
       .button {
         appearance: none;
         border: 0;
@@ -215,18 +216,19 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     <div class="container">
       <header class="topbar">
         <div>
-          <h1 class="headline">symphony-go dashboard</h1>
+          <h1 class="headline" data-i18n="dashboard.headline">symphony-go dashboard</h1>
           <div class="subtle">
-            Self-hosted task + Codex orchestration runtime.
-            <span class="dashboard-view">Live snapshot of polling, running issues, retries, and backlog.</span>
-            <span class="issue-view">Focused view for one running issue.</span>
+            <span data-i18n="dashboard.subtleTagline">Self-hosted task + Codex orchestration runtime.</span>
+            <span class="dashboard-view" data-i18n="dashboard.subtleDashboard">Live snapshot of polling, running issues, retries, and backlog.</span>
+            <span class="issue-view" data-i18n="dashboard.subtleIssue">Focused view for one running issue.</span>
           </div>
         </div>
         <div class="actions">
-          <a class="button secondary" href="/">Overview</a>
-          <a class="button secondary" href="/history">History</a>
-          <button id="refresh-button" class="button">Refresh now</button>
-          <div id="action-status" class="status-pill">Connecting live updates…</div>
+          <a class="button secondary" href="/" data-i18n="nav.overview">Overview</a>
+          <a class="button secondary" href="/history" data-i18n="nav.history">History</a>
+          <button id="language-toggle" class="button secondary lang-toggle" type="button">中文</button>
+          <button id="refresh-button" class="button" type="button" data-i18n="nav.refresh">Refresh now</button>
+          <div id="action-status" class="status-pill" data-i18n="status.connecting">Connecting live updates…</div>
         </div>
       </header>
 
@@ -234,198 +236,198 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
       <section class="grid cards">
         <article class="card">
-          <h2>Running</h2>
+          <h2 data-i18n="card.running.title">Running</h2>
           <div id="metric-running" class="metric">0</div>
-          <div class="muted">Current issue runs</div>
+          <div class="muted" data-i18n="card.running.desc">Current issue runs</div>
         </article>
         <article class="card">
-          <h2>Retry Queue</h2>
+          <h2 data-i18n="card.retry.title">Retry Queue</h2>
           <div id="metric-retrying" class="metric">0</div>
-          <div class="muted">Scheduled retries</div>
+          <div class="muted" data-i18n="card.retry.desc">Scheduled retries</div>
         </article>
         <article class="card">
-          <h2>Ready Queue</h2>
+          <h2 data-i18n="card.ready.title">Ready Queue</h2>
           <div id="metric-ready" class="metric">0</div>
-          <div class="muted">Ready but not running</div>
+          <div class="muted" data-i18n="card.ready.desc">Ready but not running</div>
         </article>
         <article class="card">
-          <h2>Blocked</h2>
+          <h2 data-i18n="card.blocked.title">Blocked</h2>
           <div id="metric-blocked" class="metric">0</div>
-          <div class="muted">Waiting on dependencies</div>
+          <div class="muted" data-i18n="card.blocked.desc">Waiting on dependencies</div>
         </article>
         <article class="card">
-          <h2>Tracker</h2>
+          <h2 data-i18n="card.tracker.title">Tracker</h2>
           <div id="metric-tracker" class="metric">—</div>
-          <div id="metric-project" class="muted">Scope —</div>
+          <div id="metric-project" class="muted" data-i18n="card.tracker.scope">Scope —</div>
         </article>
         <article class="card">
-          <h2>Poll Interval</h2>
+          <h2 data-i18n="card.poll.title">Poll Interval</h2>
           <div id="metric-poll-interval" class="metric">—</div>
-          <div id="metric-next-poll" class="muted">Next poll —</div>
+          <div id="metric-next-poll" class="muted" data-i18n="card.poll.next">Next poll —</div>
         </article>
       </section>
 
       <section class="grid panel-grid dashboard-view">
         <article class="panel">
-          <h2>Runtime</h2>
+          <h2 data-i18n="runtime.title">Runtime</h2>
           <dl class="kv">
-            <dt>Service</dt><dd id="runtime-service">—</dd>
-            <dt>Uptime</dt><dd id="runtime-uptime">—</dd>
-            <dt>Workflow</dt><dd id="runtime-workflow">—</dd>
-            <dt>Prompt Length</dt><dd id="runtime-prompt-length">—</dd>
-            <dt>Polling</dt><dd id="runtime-polling">—</dd>
-            <dt>Last Poll</dt><dd id="runtime-last-poll">—</dd>
-            <dt>Next Poll</dt><dd id="runtime-next-poll">—</dd>
+            <dt data-i18n="runtime.service">Service</dt><dd id="runtime-service">—</dd>
+            <dt data-i18n="runtime.uptime">Uptime</dt><dd id="runtime-uptime">—</dd>
+            <dt data-i18n="runtime.workflow">Workflow</dt><dd id="runtime-workflow">—</dd>
+            <dt data-i18n="runtime.promptLength">Prompt Length</dt><dd id="runtime-prompt-length">—</dd>
+            <dt data-i18n="runtime.polling">Polling</dt><dd id="runtime-polling">—</dd>
+            <dt data-i18n="runtime.lastPoll">Last Poll</dt><dd id="runtime-last-poll">—</dd>
+            <dt data-i18n="runtime.nextPoll">Next Poll</dt><dd id="runtime-next-poll">—</dd>
           </dl>
         </article>
         <article class="panel">
-          <h2>Config Summary</h2>
+          <h2 data-i18n="config.title">Config Summary</h2>
           <dl class="kv">
-            <dt>Workspace Root</dt><dd id="config-workspace">—</dd>
-            <dt>Tracker Query / Inbox</dt><dd id="config-jql">—</dd>
-            <dt>Active States</dt><dd id="config-active-states">—</dd>
-            <dt>Terminal States</dt><dd id="config-terminal-states">—</dd>
-            <dt>Max Agents</dt><dd id="config-max-agents">—</dd>
-            <dt>Agent Max Turns</dt><dd id="config-max-turns">—</dd>
-            <dt>Codex Command</dt><dd id="config-codex-command">—</dd>
-            <dt>Server Auth</dt><dd id="config-server-auth">—</dd>
+            <dt data-i18n="config.workspaceRoot">Workspace Root</dt><dd id="config-workspace">—</dd>
+            <dt data-i18n="config.trackerQueryInbox">Tracker Query / Inbox</dt><dd id="config-jql">—</dd>
+            <dt data-i18n="config.activeStates">Active States</dt><dd id="config-active-states">—</dd>
+            <dt data-i18n="config.terminalStates">Terminal States</dt><dd id="config-terminal-states">—</dd>
+            <dt data-i18n="config.maxAgents">Max Agents</dt><dd id="config-max-agents">—</dd>
+            <dt data-i18n="config.agentMaxTurns">Agent Max Turns</dt><dd id="config-max-turns">—</dd>
+            <dt data-i18n="config.codexCommand">Codex Command</dt><dd id="config-codex-command">—</dd>
+            <dt data-i18n="config.serverAuth">Server Auth</dt><dd id="config-server-auth">—</dd>
           </dl>
         </article>
       </section>
 
       <section class="panel dashboard-view">
-        <h2>Running Issues</h2>
+        <h2 data-i18n="running.title">Running Issues</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Issue</th>
-                <th>State</th>
-                <th>Turns</th>
-                <th>Runtime</th>
-                <th>Session</th>
-                <th>Last Event</th>
-                <th>Workspace</th>
+                <th data-i18n="table.issue">Issue</th>
+                <th data-i18n="table.state">State</th>
+                <th data-i18n="table.turns">Turns</th>
+                <th data-i18n="table.runtime">Runtime</th>
+                <th data-i18n="table.session">Session</th>
+                <th data-i18n="table.lastEvent">Last Event</th>
+                <th data-i18n="table.workspace">Workspace</th>
               </tr>
             </thead>
             <tbody id="running-body"></tbody>
           </table>
         </div>
-        <div id="running-empty" class="empty">No issues are currently running.</div>
+        <div id="running-empty" class="empty" data-i18n="running.empty">No issues are currently running.</div>
       </section>
 
       <section class="panel dashboard-view">
-        <h2>Retry Queue</h2>
+        <h2 data-i18n="card.retry.title">Retry Queue</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Issue</th>
-                <th>Attempt</th>
-                <th>Due In</th>
-                <th>Type</th>
-                <th>Error</th>
+                <th data-i18n="table.issue">Issue</th>
+                <th data-i18n="table.attempt">Attempt</th>
+                <th data-i18n="table.dueIn">Due In</th>
+                <th data-i18n="table.type">Type</th>
+                <th data-i18n="table.error">Error</th>
               </tr>
             </thead>
             <tbody id="retry-body"></tbody>
           </table>
         </div>
-        <div id="retry-empty" class="empty">Retry queue is empty.</div>
+        <div id="retry-empty" class="empty" data-i18n="retry.empty">Retry queue is empty.</div>
       </section>
 
       <section class="panel dashboard-view">
-        <h2>Pending Backlog</h2>
+        <h2 data-i18n="backlog.title">Pending Backlog</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Issue</th>
-                <th>Queue</th>
-                <th>State</th>
-                <th>Priority / Order</th>
-                <th>Dependencies</th>
-                <th>Updated</th>
+                <th data-i18n="table.issue">Issue</th>
+                <th data-i18n="table.queue">Queue</th>
+                <th data-i18n="table.state">State</th>
+                <th data-i18n="table.priorityOrder">Priority / Order</th>
+                <th data-i18n="table.dependencies">Dependencies</th>
+                <th data-i18n="table.updated">Updated</th>
               </tr>
             </thead>
             <tbody id="backlog-body"></tbody>
           </table>
         </div>
-        <div id="backlog-empty" class="empty">No pending backlog items are currently tracked.</div>
+        <div id="backlog-empty" class="empty" data-i18n="backlog.empty">No pending backlog items are currently tracked.</div>
       </section>
 
       <section class="panel dashboard-view">
-        <h2>Recent Runs</h2>
+        <h2 data-i18n="history.title">Recent Runs</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Run</th>
-                <th>Status</th>
-                <th>Finished</th>
-                <th>Runtime</th>
-                <th>Turns</th>
-                <th>Events</th>
-                <th>Workspace</th>
+                <th data-i18n="table.run">Run</th>
+                <th data-i18n="table.status">Status</th>
+                <th data-i18n="table.finished">Finished</th>
+                <th data-i18n="table.runtime">Runtime</th>
+                <th data-i18n="table.turns">Turns</th>
+                <th data-i18n="table.events">Events</th>
+                <th data-i18n="table.workspace">Workspace</th>
               </tr>
             </thead>
             <tbody id="history-body"></tbody>
           </table>
         </div>
-        <div id="history-empty" class="empty">No completed runs recorded yet.</div>
+        <div id="history-empty" class="empty" data-i18n="history.empty">No completed runs recorded yet.</div>
       </section>
 
       <section class="panel issue-view">
-        <h2 class="issue-title" id="issue-heading">Issue</h2>
+        <h2 class="issue-title" id="issue-heading" data-i18n="issue.heading">Issue</h2>
         <div class="issue-meta">
-          <span id="issue-state" class="tag ok">Unknown</span>
-          <span id="issue-queue-status" class="tag warn">Queue: unknown</span>
-          <span id="issue-turns" class="tag warn">Turns: —</span>
-          <span id="issue-runtime" class="tag warn">Runtime: —</span>
+          <span id="issue-state" class="tag ok" data-i18n="issue.unknown">Unknown</span>
+          <span id="issue-queue-status" class="tag warn" data-i18n="issue.queueUnknown">Queue: unknown</span>
+          <span id="issue-turns" class="tag warn" data-i18n="issue.turnsPlaceholder">Turns: —</span>
+          <span id="issue-runtime" class="tag warn" data-i18n="issue.runtimePlaceholder">Runtime: —</span>
         </div>
-        <div id="issue-missing" class="empty" style="display:none;">This issue is not visible in the current running, retry, or backlog snapshots.</div>
+        <div id="issue-missing" class="empty" style="display:none;" data-i18n="issue.missing">This issue is not visible in the current running, retry, or backlog snapshots.</div>
         <div id="issue-content">
           <dl class="kv">
-            <dt>Title</dt><dd id="issue-title">—</dd>
-            <dt>Issue ID</dt><dd id="issue-id">—</dd>
-            <dt>Queue Detail</dt><dd id="issue-queue-detail">—</dd>
-            <dt>Session ID</dt><dd id="issue-session">—</dd>
-            <dt>Codex PID</dt><dd id="issue-pid">—</dd>
-            <dt>Retry Attempt</dt><dd id="issue-retry">—</dd>
-            <dt>Retry Due</dt><dd id="issue-retry-due">—</dd>
-            <dt>Priority / Order</dt><dd id="issue-priority-order">—</dd>
-            <dt>Dependencies</dt><dd id="issue-dependencies">—</dd>
-            <dt>Blocked By</dt><dd id="issue-blocked-by">—</dd>
-            <dt>Last Event</dt><dd id="issue-last-event">—</dd>
-            <dt>Last Message</dt><dd id="issue-last-message">—</dd>
-            <dt>Last Timestamp</dt><dd id="issue-last-timestamp">—</dd>
-            <dt>Updated At</dt><dd id="issue-updated-at">—</dd>
+            <dt data-i18n="issue.titleLabel">Title</dt><dd id="issue-title">—</dd>
+            <dt data-i18n="issue.issueID">Issue ID</dt><dd id="issue-id">—</dd>
+            <dt data-i18n="issue.queueDetail">Queue Detail</dt><dd id="issue-queue-detail">—</dd>
+            <dt data-i18n="issue.sessionID">Session ID</dt><dd id="issue-session">—</dd>
+            <dt data-i18n="issue.codexPID">Codex PID</dt><dd id="issue-pid">—</dd>
+            <dt data-i18n="issue.retryAttempt">Retry Attempt</dt><dd id="issue-retry">—</dd>
+            <dt data-i18n="issue.retryDue">Retry Due</dt><dd id="issue-retry-due">—</dd>
+            <dt data-i18n="issue.priorityOrder">Priority / Order</dt><dd id="issue-priority-order">—</dd>
+            <dt data-i18n="issue.dependencies">Dependencies</dt><dd id="issue-dependencies">—</dd>
+            <dt data-i18n="issue.blockedBy">Blocked By</dt><dd id="issue-blocked-by">—</dd>
+            <dt data-i18n="issue.lastEvent">Last Event</dt><dd id="issue-last-event">—</dd>
+            <dt data-i18n="issue.lastMessage">Last Message</dt><dd id="issue-last-message">—</dd>
+            <dt data-i18n="issue.lastTimestamp">Last Timestamp</dt><dd id="issue-last-timestamp">—</dd>
+            <dt data-i18n="issue.updatedAt">Updated At</dt><dd id="issue-updated-at">—</dd>
             <dt>Workspace</dt><dd class="mono" id="issue-workspace">—</dd>
-            <dt>Usage</dt><dd id="issue-usage">—</dd>
+            <dt data-i18n="issue.usage">Usage</dt><dd id="issue-usage">—</dd>
           </dl>
         </div>
       </section>
 
       <section class="panel issue-view">
-        <h2>Recent Runs for Issue</h2>
+        <h2 data-i18n="issue.historyTitle">Recent Runs for Issue</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Run</th>
-                <th>Status</th>
-                <th>Finished</th>
-                <th>Runtime</th>
-                <th>Turns</th>
-                <th>Result</th>
+                <th data-i18n="table.run">Run</th>
+                <th data-i18n="table.status">Status</th>
+                <th data-i18n="table.finished">Finished</th>
+                <th data-i18n="table.runtime">Runtime</th>
+                <th data-i18n="table.turns">Turns</th>
+                <th data-i18n="table.result">Result</th>
               </tr>
             </thead>
             <tbody id="issue-history-body"></tbody>
           </table>
         </div>
-        <div id="issue-history-empty" class="empty">No recent runs recorded for this issue.</div>
+        <div id="issue-history-empty" class="empty" data-i18n="issue.historyEmpty">No recent runs recorded for this issue.</div>
       </section>
 
-      <div class="footer">
+      <div class="footer" data-i18n-html="footer.html">
         API: <a href="/api/v1/state">/api/v1/state</a> ·
         history: <a href="/history">/history</a> ·
         live stream: <a href="/events">/events</a> ·
@@ -434,25 +436,228 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     </div>
 
     <script>
+      const translations = {
+        'page.title.dashboard': { en: 'symphony-go dashboard', zh: 'symphony-go 控制台' },
+        'page.title.issue': { en: 'Issue · symphony-go', zh: '任务 · symphony-go' },
+        'page.title.issueSuffix': { en: 'issue', zh: '任务' },
+        'dashboard.headline': { en: 'symphony-go dashboard', zh: 'symphony-go 控制台' },
+        'dashboard.subtleTagline': { en: 'Self-hosted task + Codex orchestration runtime.', zh: '自托管任务与 Codex 编排运行时。' },
+        'dashboard.subtleDashboard': { en: 'Live snapshot of polling, running issues, retries, and backlog.', zh: '实时查看轮询、运行中任务、重试队列和待处理积压。' },
+        'dashboard.subtleIssue': { en: 'Focused view for one running issue.', zh: '聚焦查看单个任务的运行状态。' },
+        'nav.overview': { en: 'Overview', zh: '总览' },
+        'nav.history': { en: 'History', zh: '历史' },
+        'nav.refresh': { en: 'Refresh now', zh: '立即刷新' },
+        'status.connecting': { en: 'Connecting live updates…', zh: '正在连接实时更新…' },
+        'card.running.title': { en: 'Running', zh: '运行中' },
+        'card.running.desc': { en: 'Current issue runs', zh: '当前正在执行的任务' },
+        'card.retry.title': { en: 'Retry Queue', zh: '重试队列' },
+        'card.retry.desc': { en: 'Scheduled retries', zh: '已安排的重试' },
+        'card.ready.title': { en: 'Ready Queue', zh: '就绪队列' },
+        'card.ready.desc': { en: 'Ready but not running', zh: '已就绪但尚未运行' },
+        'card.blocked.title': { en: 'Blocked', zh: '阻塞中' },
+        'card.blocked.desc': { en: 'Waiting on dependencies', zh: '等待依赖完成' },
+        'card.tracker.title': { en: 'Tracker', zh: '跟踪器' },
+        'card.tracker.scope': { en: 'Scope —', zh: '范围 —' },
+        'card.poll.title': { en: 'Poll Interval', zh: '轮询间隔' },
+        'card.poll.next': { en: 'Next poll —', zh: '下次轮询 —' },
+        'runtime.title': { en: 'Runtime', zh: '运行时' },
+        'runtime.service': { en: 'Service', zh: '服务' },
+        'runtime.uptime': { en: 'Uptime', zh: '运行时长' },
+        'runtime.workflow': { en: 'Workflow', zh: '工作流' },
+        'runtime.promptLength': { en: 'Prompt Length', zh: '提示长度' },
+        'runtime.polling': { en: 'Polling', zh: '轮询状态' },
+        'runtime.lastPoll': { en: 'Last Poll', zh: '上次轮询' },
+        'runtime.nextPoll': { en: 'Next Poll', zh: '下次轮询' },
+        'config.title': { en: 'Config Summary', zh: '配置摘要' },
+        'config.workspaceRoot': { en: 'Workspace Root', zh: '工作区根目录' },
+        'config.trackerQueryInbox': { en: 'Tracker Query / Inbox', zh: '跟踪查询 / 收件箱' },
+        'config.activeStates': { en: 'Active States', zh: '活跃状态' },
+        'config.terminalStates': { en: 'Terminal States', zh: '终态' },
+        'config.maxAgents': { en: 'Max Agents', zh: '最大 Agent 数' },
+        'config.agentMaxTurns': { en: 'Agent Max Turns', zh: 'Agent 最大轮次' },
+        'config.codexCommand': { en: 'Codex Command', zh: 'Codex 命令' },
+        'config.serverAuth': { en: 'Server Auth', zh: '服务鉴权' },
+        'running.title': { en: 'Running Issues', zh: '运行中的任务' },
+        'table.issue': { en: 'Issue', zh: '任务' },
+        'table.state': { en: 'State', zh: '状态' },
+        'table.turns': { en: 'Turns', zh: '轮次' },
+        'table.runtime': { en: 'Runtime', zh: '运行时长' },
+        'table.session': { en: 'Session', zh: '会话' },
+        'table.lastEvent': { en: 'Last Event', zh: '最近事件' },
+        'table.workspace': { en: 'Workspace', zh: '工作区' },
+        'running.empty': { en: 'No issues are currently running.', zh: '当前没有任务在运行。' },
+        'retry.sectionTitle': { en: 'Retry Queue', zh: '重试队列' },
+        'table.attempt': { en: 'Attempt', zh: '尝试次数' },
+        'table.dueIn': { en: 'Due In', zh: '距触发还有' },
+        'table.type': { en: 'Type', zh: '类型' },
+        'table.error': { en: 'Error', zh: '错误' },
+        'retry.empty': { en: 'Retry queue is empty.', zh: '重试队列为空。' },
+        'backlog.title': { en: 'Pending Backlog', zh: '待处理积压' },
+        'table.queue': { en: 'Queue', zh: '队列' },
+        'table.priorityOrder': { en: 'Priority / Order', zh: '优先级 / 顺序' },
+        'table.dependencies': { en: 'Dependencies', zh: '依赖' },
+        'table.updated': { en: 'Updated', zh: '更新时间' },
+        'backlog.empty': { en: 'No pending backlog items are currently tracked.', zh: '当前没有待处理的积压任务。' },
+        'history.title': { en: 'Recent Runs', zh: '最近运行' },
+        'table.run': { en: 'Run', zh: '运行' },
+        'table.status': { en: 'Status', zh: '状态' },
+        'table.finished': { en: 'Finished', zh: '完成时间' },
+        'table.events': { en: 'Events', zh: '事件数' },
+        'history.empty': { en: 'No completed runs recorded yet.', zh: '还没有已完成的运行记录。' },
+        'issue.heading': { en: 'Issue', zh: '任务' },
+        'issue.unknown': { en: 'Unknown', zh: '未知' },
+        'issue.queueUnknown': { en: 'Queue: unknown', zh: '队列：未知' },
+        'issue.turnsPlaceholder': { en: 'Turns: —', zh: '轮次：—' },
+        'issue.runtimePlaceholder': { en: 'Runtime: —', zh: '运行时长：—' },
+        'issue.missing': { en: 'This issue is not visible in the current running, retry, or backlog snapshots.', zh: '当前运行、重试或积压快照中都看不到这个任务。' },
+        'issue.titleLabel': { en: 'Title', zh: '标题' },
+        'issue.issueID': { en: 'Issue ID', zh: '任务 ID' },
+        'issue.queueDetail': { en: 'Queue Detail', zh: '队列详情' },
+        'issue.sessionID': { en: 'Session ID', zh: '会话 ID' },
+        'issue.codexPID': { en: 'Codex PID', zh: 'Codex PID' },
+        'issue.retryAttempt': { en: 'Retry Attempt', zh: '重试次数' },
+        'issue.retryDue': { en: 'Retry Due', zh: '重试时间' },
+        'issue.priorityOrder': { en: 'Priority / Order', zh: '优先级 / 顺序' },
+        'issue.dependencies': { en: 'Dependencies', zh: '依赖' },
+        'issue.blockedBy': { en: 'Blocked By', zh: '阻塞来源' },
+        'issue.lastEvent': { en: 'Last Event', zh: '最近事件' },
+        'issue.lastMessage': { en: 'Last Message', zh: '最近消息' },
+        'issue.lastTimestamp': { en: 'Last Timestamp', zh: '最近时间戳' },
+        'issue.updatedAt': { en: 'Updated At', zh: '更新时间' },
+        'issue.workspace': { en: 'Workspace', zh: '工作区' },
+        'issue.usage': { en: 'Usage', zh: '用量' },
+        'issue.historyTitle': { en: 'Recent Runs for Issue', zh: '该任务的最近运行' },
+        'table.result': { en: 'Result', zh: '结果' },
+        'issue.historyEmpty': { en: 'No recent runs recorded for this issue.', zh: '这个任务还没有最近运行记录。' },
+        'footer.html': { en: 'API: <a href="/api/v1/state">/api/v1/state</a> · history: <a href="/history">/history</a> · live stream: <a href="/events">/events</a> · health: <a href="/healthz">/healthz</a>', zh: 'API：<a href="/api/v1/state">/api/v1/state</a> · 历史：<a href="/history">/history</a> · 实时流：<a href="/events">/events</a> · 健康检查：<a href="/healthz">/healthz</a>' },
+        'dynamic.localTasks': { en: 'Local tasks', zh: '本地任务' },
+        'dynamic.projectPrefix': { en: 'Project ', zh: '项目 ' },
+        'dynamic.projectUnknown': { en: 'Project —', zh: '项目 —' },
+        'dynamic.nextPollPrefix': { en: 'Next poll ', zh: '下次轮询 ' },
+        'dynamic.chars': { en: 'chars', zh: '字符' },
+        'dynamic.checkingNow': { en: 'Checking now…', zh: '正在检查…' },
+        'dynamic.idle': { en: 'Idle', zh: '空闲' },
+        'dynamic.serverAuthEnabled': { en: 'Enabled (Basic auth)', zh: '已启用（Basic 认证）' },
+        'dynamic.serverAuthDisabled': { en: 'Disabled', zh: '未启用' },
+        'dynamic.continuation': { en: 'Continuation', zh: '续跑' },
+        'dynamic.failure': { en: 'Failure', zh: '失败' },
+        'dynamic.waitingOn': { en: 'Waiting on ', zh: '等待依赖：' },
+        'dynamic.dependenciesSatisfied': { en: 'Dependencies satisfied', zh: '依赖已满足' },
+        'dynamic.noDependencies': { en: 'No dependencies', zh: '无依赖' },
+        'dynamic.issueMissingHistory': { en: 'This issue is not currently active. Recent runs are shown below.', zh: '这个任务当前未激活，下面展示的是最近运行记录。' },
+        'dynamic.inactive': { en: 'Inactive', zh: '未激活' },
+        'dynamic.notVisible': { en: 'Not visible', zh: '不可见' },
+        'dynamic.queueHistoryOnly': { en: 'Queue: history only', zh: '队列：仅历史记录' },
+        'dynamic.turnsPrefix': { en: 'Turns: ', zh: '轮次：' },
+        'dynamic.runtimePrefix': { en: 'Runtime: ', zh: '运行时长：' },
+        'dynamic.queuePrefix': { en: 'Queue: ', zh: '队列：' },
+        'dynamic.unknownLower': { en: 'unknown', zh: '未知' },
+        'dynamic.readyForDispatch': { en: 'Ready for dispatch', zh: '可调度' },
+        'dynamic.continuationRetryScheduled': { en: 'Continuation retry scheduled', zh: '已安排续跑重试' },
+        'dynamic.failureRetryScheduled': { en: 'Failure retry scheduled', zh: '已安排失败重试' },
+        'dynamic.currentlyExecuting': { en: 'Currently executing', zh: '正在执行' },
+        'dynamic.requestingRefresh': { en: 'Requesting refresh…', zh: '正在请求刷新…' },
+        'dynamic.refreshAlreadyQueued': { en: 'Refresh already queued', zh: '刷新已在队列中' },
+        'dynamic.refreshRequested': { en: 'Refresh requested', zh: '已请求刷新' },
+        'dynamic.refreshFailed': { en: 'Refresh failed', zh: '刷新失败' },
+        'dynamic.liveConnected': { en: 'Live updates connected', zh: '实时更新已连接' },
+        'dynamic.initialLoadFailed': { en: 'Initial load failed', zh: '初次加载失败' },
+        'dynamic.liveParseFailed': { en: 'Live update parse failed', zh: '实时更新解析失败' },
+        'dynamic.liveDisconnected': { en: 'Live updates disconnected', zh: '实时更新已断开' },
+        'error.loadSnapshot': { en: 'Failed to load snapshot', zh: '加载运行快照失败' },
+        'error.loadHistory': { en: 'Failed to load history', zh: '加载历史记录失败' },
+        'unit.ms': { en: 'ms', zh: '毫秒' },
+        'unit.s': { en: 's', zh: '秒' },
+        'usage.input': { en: 'input', zh: '输入' },
+        'usage.output': { en: 'output', zh: '输出' },
+        'usage.total': { en: 'total', zh: '总计' },
+        'usage.cached': { en: 'cached', zh: '缓存' },
+        'usage.reasoning': { en: 'reasoning', zh: '推理' }
+      };
+
       const pageKind = document.body.dataset.pageKind || 'dashboard';
       const issueIdentifier = document.body.dataset.issueIdentifier || '';
       const refreshButton = document.getElementById('refresh-button');
+      const languageToggle = document.getElementById('language-toggle');
       const actionStatus = document.getElementById('action-status');
       const errorBanner = document.getElementById('error-banner');
       let issueHistoryRuns = [];
+      let latestSnapshot = null;
+      let currentLanguage = detectLanguage();
+
+      function detectLanguage() {
+        try {
+          const stored = localStorage.getItem('symphony-ui-language');
+          if (stored === 'zh' || stored === 'en') return stored;
+        } catch (_error) {
+        }
+        return (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+      }
+
+      function saveLanguage() {
+        try {
+          localStorage.setItem('symphony-ui-language', currentLanguage);
+        } catch (_error) {
+        }
+      }
+
+      function tr(key) {
+        const entry = translations[key];
+        if (!entry) return key;
+        return currentLanguage === 'zh' ? (entry.zh || entry.en) : entry.en;
+      }
+
+      function setLanguageToggleLabel() {
+        if (!languageToggle) return;
+        languageToggle.textContent = currentLanguage === 'zh' ? 'English' : '中文';
+        languageToggle.setAttribute('aria-label', currentLanguage === 'zh' ? 'Switch to English' : '切换到中文');
+      }
+
+      function updatePageTitle(issueID) {
+        if (pageKind === 'issue') {
+          const label = issueID || issueIdentifier;
+          document.title = label ? label + ' · ' + tr('page.title.issueSuffix') : tr('page.title.issue');
+          return;
+        }
+        document.title = tr('page.title.dashboard');
+      }
+
+      function applyStaticTranslations() {
+        document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
+        document.querySelectorAll('[data-i18n]').forEach(function(node) {
+          node.textContent = tr(node.dataset.i18n);
+        });
+        document.querySelectorAll('[data-i18n-html]').forEach(function(node) {
+          node.innerHTML = tr(node.dataset.i18nHtml);
+        });
+        setLanguageToggleLabel();
+        updatePageTitle();
+      }
+
+      function toggleLanguage() {
+        currentLanguage = currentLanguage === 'zh' ? 'en' : 'zh';
+        saveLanguage();
+        applyStaticTranslations();
+        if (latestSnapshot) renderDashboard(latestSnapshot);
+      }
 
       function formatTime(value) {
         if (!value) return '—';
         const parsed = new Date(value);
         if (Number.isNaN(parsed.getTime())) return value;
-        return parsed.toLocaleString();
+        return parsed.toLocaleString(currentLanguage === 'zh' ? 'zh-CN' : 'en-US');
       }
 
       function formatMs(value) {
         if (value === null || value === undefined) return '—';
-        if (value < 1000) return value + ' ms';
+        if (value < 1000) return value + ' ' + tr('unit.ms');
         const seconds = Math.round((value / 1000) * 10) / 10;
-        return seconds + ' s';
+        return seconds + ' ' + tr('unit.s');
+      }
+
+      function formatSeconds(value) {
+        if (value === null || value === undefined) return '—';
+        return String(value) + tr('unit.s');
       }
 
       function formatList(values) {
@@ -469,9 +674,9 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       function formatUsage(usage) {
         if (!usage) return '—';
         const value = usage || {};
-        let usageText = 'input=' + (value.input_tokens || 0) + ', output=' + (value.output_tokens || 0) + ', total=' + (value.total_tokens || 0);
-        if (value.cached_input_tokens) usageText += ', cached=' + value.cached_input_tokens;
-        if (value.reasoning_output_tokens) usageText += ', reasoning=' + value.reasoning_output_tokens;
+        let usageText = tr('usage.input') + '=' + (value.input_tokens || 0) + ', ' + tr('usage.output') + '=' + (value.output_tokens || 0) + ', ' + tr('usage.total') + '=' + (value.total_tokens || 0);
+        if (value.cached_input_tokens) usageText += ', ' + tr('usage.cached') + '=' + value.cached_input_tokens;
+        if (value.reasoning_output_tokens) usageText += ', ' + tr('usage.reasoning') + '=' + value.reasoning_output_tokens;
         return usageText;
       }
 
@@ -507,6 +712,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       }
 
       function renderDashboard(snapshot) {
+        latestSnapshot = snapshot;
         const running = snapshot.running || [];
         const retrying = snapshot.retrying || [];
         const backlog = snapshot.backlog || [];
@@ -518,23 +724,23 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
         setText('metric-running', String(running.length));
         setText('metric-retrying', String(retrying.length));
-        const readyCount = backlog.filter(item => item.queue_status === 'ready').length;
-        const blockedCount = backlog.filter(item => item.queue_status === 'blocked').length;
+        const readyCount = backlog.filter(function(item) { return item.queue_status === 'ready'; }).length;
+        const blockedCount = backlog.filter(function(item) { return item.queue_status === 'blocked'; }).length;
         setText('metric-ready', String(readyCount));
         setText('metric-blocked', String(blockedCount));
         const trackerKind = (config.tracker && config.tracker.kind) || '';
         const localConfig = config.local || {};
 
         setText('metric-tracker', trackerKind || '—');
-        setText('metric-project', trackerKind === 'local' ? 'Local tasks' : ((config.tracker && config.tracker.project_key) ? 'Project ' + config.tracker.project_key : 'Project —'));
+        setText('metric-project', trackerKind === 'local' ? tr('dynamic.localTasks') : ((config.tracker && config.tracker.project_key) ? tr('dynamic.projectPrefix') + config.tracker.project_key : tr('dynamic.projectUnknown')));
         setText('metric-poll-interval', formatMs(polling.poll_interval_ms));
-        setText('metric-next-poll', 'Next poll ' + formatTime(polling.next_poll_at));
+        setText('metric-next-poll', tr('dynamic.nextPollPrefix') + formatTime(polling.next_poll_at));
 
         setText('runtime-service', (service.name || 'symphony-go') + ' (' + (service.version || 'dev') + ')');
         setText('runtime-uptime', service.uptime || '—');
         setText('runtime-workflow', workflow.path || '—');
-        setText('runtime-prompt-length', workflow.prompt_length != null ? workflow.prompt_length + ' chars' : '—');
-        setText('runtime-polling', polling.checking ? 'Checking now…' : 'Idle');
+        setText('runtime-prompt-length', workflow.prompt_length != null ? workflow.prompt_length + ' ' + tr('dynamic.chars') : '—');
+        setText('runtime-polling', polling.checking ? tr('dynamic.checkingNow') : tr('dynamic.idle'));
         setText('runtime-last-poll', formatTime(polling.last_poll_at));
         setText('runtime-next-poll', formatTime(polling.next_poll_at));
 
@@ -545,9 +751,10 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setText('config-max-agents', config.orchestrator ? String(config.orchestrator.max_concurrent_agents ?? '—') : '—');
         setText('config-max-turns', config.agent ? String(config.agent.max_turns ?? '—') : '—');
         setText('config-codex-command', config.codex ? (config.codex.command || '—') : '—');
-        setText('config-server-auth', config.server && config.server.auth_enabled ? 'Enabled (Basic auth)' : 'Disabled');
+        setText('config-server-auth', config.server && config.server.auth_enabled ? tr('dynamic.serverAuthEnabled') : tr('dynamic.serverAuthDisabled'));
 
         showError(polling.last_error || '');
+        updatePageTitle();
 
         const runningBody = document.getElementById('running-body');
         const runningEmpty = document.getElementById('running-empty');
@@ -556,14 +763,14 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           runningEmpty.style.display = 'block';
         } else {
           runningEmpty.style.display = 'none';
-          running.forEach(item => {
+          running.forEach(function(item) {
             const row = document.createElement('tr');
             const issueLink = '/issues/' + encodeURIComponent(item.identifier);
             row.innerHTML = '' +
               '<td><a href="' + issueLink + '">' + escapeHTML(item.identifier) + '</a><div class="muted mono">' + escapeHTML(item.issue_id) + '</div></td>' +
-              '<td><span class="tag ' + statusClass(item.state) + '">' + escapeHTML(item.state || 'Unknown') + '</span></td>' +
+              '<td><span class="tag ' + statusClass(item.state) + '">' + escapeHTML(item.state || tr('issue.unknown')) + '</span></td>' +
               '<td>' + escapeHTML(item.turns) + '</td>' +
-              '<td>' + escapeHTML(item.runtime_seconds) + 's</td>' +
+              '<td>' + escapeHTML(formatSeconds(item.runtime_seconds)) + '</td>' +
               '<td class="mono">' + escapeHTML(item.session_id || '—') + '</td>' +
               '<td>' + escapeHTML(item.last_event || '—') + '<div class="muted">' + escapeHTML(item.last_message || '') + '</div></td>' +
               '<td><code>' + escapeHTML(item.workspace_path || '—') + '</code></td>';
@@ -578,13 +785,13 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           retryEmpty.style.display = 'block';
         } else {
           retryEmpty.style.display = 'none';
-          retrying.forEach(item => {
+          retrying.forEach(function(item) {
             const row = document.createElement('tr');
             row.innerHTML = '' +
               '<td>' + escapeHTML(item.identifier) + '<div class="muted mono">' + escapeHTML(item.issue_id) + '</div></td>' +
               '<td>' + escapeHTML(item.attempt) + '</td>' +
               '<td>' + escapeHTML(formatMs(item.due_in_ms)) + '</td>' +
-              '<td><span class="tag ' + (item.continuation ? 'warn' : 'err') + '">' + escapeHTML(item.continuation ? 'Continuation' : 'Failure') + '</span></td>' +
+              '<td><span class="tag ' + (item.continuation ? 'warn' : 'err') + '">' + escapeHTML(item.continuation ? tr('dynamic.continuation') : tr('dynamic.failure')) + '</span></td>' +
               '<td>' + escapeHTML(item.error || '—') + '</td>';
             retryBody.appendChild(row);
           });
@@ -597,16 +804,16 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           backlogEmpty.style.display = 'block';
         } else {
           backlogEmpty.style.display = 'none';
-          backlog.forEach(item => {
+          backlog.forEach(function(item) {
             const row = document.createElement('tr');
             const dependencySummary = formatList(item.dependencies);
             const dependencyDetail = item.blocked_by && item.blocked_by.length
-              ? 'Waiting on ' + item.blocked_by.join(', ')
-              : (item.dependencies && item.dependencies.length ? 'Dependencies satisfied' : 'No dependencies');
+              ? tr('dynamic.waitingOn') + item.blocked_by.join(', ')
+              : (item.dependencies && item.dependencies.length ? tr('dynamic.dependenciesSatisfied') : tr('dynamic.noDependencies'));
             row.innerHTML = '' +
               '<td>' + escapeHTML(item.identifier) + '<div class="muted">' + escapeHTML(item.title || '') + '</div></td>' +
               '<td><span class="tag ' + statusClass(item.queue_status) + '">' + escapeHTML(item.queue_status || 'ready') + '</span></td>' +
-              '<td><span class="tag ' + statusClass(item.state) + '">' + escapeHTML(item.state || 'Unknown') + '</span></td>' +
+              '<td><span class="tag ' + statusClass(item.state) + '">' + escapeHTML(item.state || tr('issue.unknown')) + '</span></td>' +
               '<td>' + escapeHTML(formatPriorityOrder(item)) + '</td>' +
               '<td>' + escapeHTML(dependencySummary) + '<div class="muted">' + escapeHTML(dependencyDetail) + '</div></td>' +
               '<td>' + escapeHTML(formatTime(item.updated_at)) + '</td>';
@@ -621,14 +828,14 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           historyEmpty.style.display = 'block';
         } else {
           historyEmpty.style.display = 'none';
-          history.forEach(item => {
+          history.forEach(function(item) {
             const row = document.createElement('tr');
             const runLink = '/history/' + encodeURIComponent(item.run_id);
             row.innerHTML = '' +
               '<td><a href="' + runLink + '">' + escapeHTML(item.run_id) + '</a><div class="muted">' + escapeHTML(item.identifier || '—') + '</div></td>' +
               '<td><span class="tag ' + statusClass(item.status) + '">' + escapeHTML(item.status || '—') + '</span></td>' +
               '<td>' + escapeHTML(formatTime(item.finished_at)) + '</td>' +
-              '<td>' + escapeHTML(item.runtime_seconds) + 's</td>' +
+              '<td>' + escapeHTML(formatSeconds(item.runtime_seconds)) + '</td>' +
               '<td>' + escapeHTML(item.turns) + '</td>' +
               '<td>' + escapeHTML(item.event_count) + '</td>' +
               '<td><code>' + escapeHTML(item.workspace_path || '—') + '</code></td>';
@@ -645,25 +852,24 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         const running = snapshot.running || [];
         const retrying = snapshot.retrying || [];
         const backlog = snapshot.backlog || [];
-        const matchedHistory = (historyRuns || []).filter(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
-        let issue = running.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
-        if (!issue) issue = retrying.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
-        if (!issue) issue = backlog.find(item => item.identifier === issueIdentifier || item.issue_id === issueIdentifier);
-        setText('issue-heading', issueIdentifier || 'Issue');
+        const matchedHistory = (historyRuns || []).filter(function(item) { return item.identifier === issueIdentifier || item.issue_id === issueIdentifier; });
+        let issue = running.find(function(item) { return item.identifier === issueIdentifier || item.issue_id === issueIdentifier; });
+        if (!issue) issue = retrying.find(function(item) { return item.identifier === issueIdentifier || item.issue_id === issueIdentifier; });
+        if (!issue) issue = backlog.find(function(item) { return item.identifier === issueIdentifier || item.issue_id === issueIdentifier; });
+        setText('issue-heading', issueIdentifier || tr('issue.heading'));
         const missing = document.getElementById('issue-missing');
         const content = document.getElementById('issue-content');
         if (!issue) {
           missing.style.display = 'block';
-          missing.textContent = matchedHistory.length
-            ? 'This issue is not currently active. Recent runs are shown below.'
-            : 'This issue is not visible in the current running, retry, or backlog snapshots.';
+          missing.textContent = matchedHistory.length ? tr('dynamic.issueMissingHistory') : tr('issue.missing');
           content.style.display = 'none';
           document.getElementById('issue-state').className = 'tag err';
           document.getElementById('issue-queue-status').className = 'tag err';
-          setText('issue-state', matchedHistory.length ? 'Inactive' : 'Not visible');
-          setText('issue-queue-status', matchedHistory.length ? 'Queue: history only' : 'Queue: unknown');
-          setText('issue-turns', 'Turns: —');
-          setText('issue-runtime', 'Runtime: —');
+          setText('issue-state', matchedHistory.length ? tr('dynamic.inactive') : tr('dynamic.notVisible'));
+          setText('issue-queue-status', matchedHistory.length ? tr('dynamic.queueHistoryOnly') : tr('issue.queueUnknown'));
+          setText('issue-turns', tr('dynamic.turnsPrefix') + '—');
+          setText('issue-runtime', tr('dynamic.runtimePrefix') + '—');
+          updatePageTitle(issueIdentifier);
           renderIssueHistory(matchedHistory);
           return;
         }
@@ -673,10 +879,10 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         const queueNode = document.getElementById('issue-queue-status');
         stateNode.className = 'tag ' + statusClass(issue.state || issue.queue_status);
         queueNode.className = 'tag ' + statusClass(issue.queue_status || issue.state);
-        setText('issue-state', issue.state || 'Unknown');
-        setText('issue-queue-status', 'Queue: ' + (issue.queue_status || 'unknown'));
-        setText('issue-turns', 'Turns: ' + (issue.turns !== undefined && issue.turns !== null ? issue.turns : '—'));
-        setText('issue-runtime', 'Runtime: ' + (issue.runtime_seconds !== undefined && issue.runtime_seconds !== null ? (issue.runtime_seconds + 's') : '—'));
+        setText('issue-state', issue.state || tr('issue.unknown'));
+        setText('issue-queue-status', tr('dynamic.queuePrefix') + (issue.queue_status || tr('dynamic.unknownLower')));
+        setText('issue-turns', tr('dynamic.turnsPrefix') + (issue.turns !== undefined && issue.turns !== null ? issue.turns : '—'));
+        setText('issue-runtime', tr('dynamic.runtimePrefix') + (issue.runtime_seconds !== undefined && issue.runtime_seconds !== null ? formatSeconds(issue.runtime_seconds) : '—'));
         setText('issue-heading', issue.identifier || issueIdentifier);
         setText('issue-title', issue.title || '—');
         setText('issue-id', issue.issue_id || '—');
@@ -688,12 +894,12 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setText('issue-dependencies', formatList(issue.dependencies));
         setText('issue-blocked-by', formatList(issue.blocked_by));
         const queueDetail = issue.blocked_by && issue.blocked_by.length
-          ? 'Waiting on ' + issue.blocked_by.join(', ')
+          ? tr('dynamic.waitingOn') + issue.blocked_by.join(', ')
           : (issue.queue_status === 'ready'
-            ? 'Ready for dispatch'
+            ? tr('dynamic.readyForDispatch')
             : (issue.queue_status === 'retrying'
-              ? (issue.continuation ? 'Continuation retry scheduled' : 'Failure retry scheduled')
-              : (issue.queue_status === 'running' ? 'Currently executing' : '—')));
+              ? (issue.continuation ? tr('dynamic.continuationRetryScheduled') : tr('dynamic.failureRetryScheduled'))
+              : (issue.queue_status === 'running' ? tr('dynamic.currentlyExecuting') : '—')));
         setText('issue-queue-detail', queueDetail);
         setText('issue-last-event', issue.last_event || '—');
         setText('issue-last-message', issue.last_message || issue.error || '—');
@@ -701,6 +907,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         setText('issue-updated-at', formatTime(issue.updated_at));
         setText('issue-workspace', issue.workspace_path || '—');
         setText('issue-usage', formatUsage(issue.usage));
+        updatePageTitle(issue.identifier || issueIdentifier);
         renderIssueHistory(matchedHistory);
       }
 
@@ -714,14 +921,14 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
           return;
         }
         empty.style.display = 'none';
-        historyRuns.slice(0, 10).forEach(item => {
+        historyRuns.slice(0, 10).forEach(function(item) {
           const row = document.createElement('tr');
           const runLink = '/history/' + encodeURIComponent(item.run_id);
           row.innerHTML = '' +
             '<td><a href="' + runLink + '">' + escapeHTML(item.run_id) + '</a></td>' +
             '<td><span class="tag ' + statusClass(item.status) + '">' + escapeHTML(item.status || '—') + '</span></td>' +
             '<td>' + escapeHTML(formatTime(item.finished_at)) + '</td>' +
-            '<td>' + escapeHTML(item.runtime_seconds) + 's</td>' +
+            '<td>' + escapeHTML(formatSeconds(item.runtime_seconds)) + '</td>' +
             '<td>' + escapeHTML(item.turns) + '</td>' +
             '<td>' + escapeHTML(item.last_message || item.error || '—') + '</td>';
           body.appendChild(row);
@@ -730,13 +937,13 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
       async function loadSnapshot() {
         const response = await fetch('/api/v1/state');
-        if (!response.ok) throw new Error('Failed to load snapshot');
+        if (!response.ok) throw new Error(tr('error.loadSnapshot'));
         return response.json();
       }
 
       async function loadHistory() {
         const response = await fetch('/api/v1/history');
-        if (!response.ok) throw new Error('Failed to load history');
+        if (!response.ok) throw new Error(tr('error.loadHistory'));
         const payload = await response.json();
         issueHistoryRuns = payload.runs || [];
         return issueHistoryRuns;
@@ -744,63 +951,64 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
 
       async function refreshNow() {
         refreshButton.disabled = true;
-        actionStatus.textContent = 'Requesting refresh…';
+        actionStatus.textContent = tr('dynamic.requestingRefresh');
         try {
           const response = await fetch('/api/v1/refresh', { method: 'POST' });
           const payload = await response.json();
-          actionStatus.textContent = payload.coalesced ? 'Refresh already queued' : 'Refresh requested';
-        } catch (error) {
-          actionStatus.textContent = 'Refresh failed';
+          actionStatus.textContent = payload.coalesced ? tr('dynamic.refreshAlreadyQueued') : tr('dynamic.refreshRequested');
+        } catch (_error) {
+          actionStatus.textContent = tr('dynamic.refreshFailed');
         } finally {
           refreshButton.disabled = false;
         }
       }
 
-      refreshButton.addEventListener('click', refreshNow);
+      if (refreshButton) refreshButton.addEventListener('click', refreshNow);
+      if (languageToggle) languageToggle.addEventListener('click', toggleLanguage);
+
+      applyStaticTranslations();
 
       (async function init() {
         try {
           if (pageKind === 'issue') {
-            const [snapshot] = await Promise.all([
+            const snapshotHistory = await Promise.all([
               loadSnapshot(),
-              loadHistory().catch(() => [])
+              loadHistory().catch(function() { return []; })
             ]);
-            renderDashboard(snapshot);
+            renderDashboard(snapshotHistory[0]);
           } else {
-            const snapshot = await loadSnapshot();
-            renderDashboard(snapshot);
+            renderDashboard(await loadSnapshot());
           }
-          actionStatus.textContent = 'Live updates connected';
+          actionStatus.textContent = tr('dynamic.liveConnected');
         } catch (error) {
-          actionStatus.textContent = 'Initial load failed';
+          actionStatus.textContent = tr('dynamic.initialLoadFailed');
           showError(String(error));
         }
 
         const events = new EventSource('/events');
-        events.onmessage = event => {
+        events.onmessage = function(event) {
           try {
             renderDashboard(JSON.parse(event.data));
-            actionStatus.textContent = 'Live updates connected';
+            actionStatus.textContent = tr('dynamic.liveConnected');
           } catch (_error) {
-            actionStatus.textContent = 'Live update parse failed';
+            actionStatus.textContent = tr('dynamic.liveParseFailed');
           }
         };
-        events.onerror = () => {
-          actionStatus.textContent = 'Live updates disconnected';
+        events.onerror = function() {
+          actionStatus.textContent = tr('dynamic.liveDisconnected');
         };
 
-        setInterval(async () => {
+        setInterval(async function() {
           if (document.hidden) return;
           try {
             if (pageKind === 'issue') {
-              const [snapshot] = await Promise.all([
+              const snapshotHistory = await Promise.all([
                 loadSnapshot(),
-                loadHistory().catch(() => issueHistoryRuns)
+                loadHistory().catch(function() { return issueHistoryRuns; })
               ]);
-              renderDashboard(snapshot);
+              renderDashboard(snapshotHistory[0]);
             } else {
-              const snapshot = await loadSnapshot();
-              renderDashboard(snapshot);
+              renderDashboard(await loadSnapshot());
             }
           } catch (_error) {
           }

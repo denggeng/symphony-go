@@ -9,7 +9,7 @@ Runtime config lives in `WORKFLOW.md` front matter.
 - `orchestrator`: poll cadence, concurrency, and retry ceiling
 - `workspace`: root directory for per-task workspaces plus optional baseline seed/sync-back
 - `hooks`: optional shell hooks for workspace lifecycle
-- `agent`: Codex turn limits
+- `agent`: Codex turn limits and optional prompt persistence
 - `codex`: app-server command and runtime policies
 - `server`: HTTP bind host/port and optional Basic auth credentials
 
@@ -111,6 +111,15 @@ The `workspace` block supports two optional helpers for task-to-task carry-over:
 
 Current behavior is additive: seed and sync-back copy files into the target tree, but they do not delete files that are missing from the source tree. For safety, symlinks inside the copied tree are rejected.
 
+## Agent prompt persistence
+
+The `agent` block supports:
+
+- `agent.max_turns`
+- `agent.persist_prompts_to_results`
+
+`persist_prompts_to_results` is opt-in and currently applies to `tracker.kind: local`. When enabled, Symphony writes the latest turn prompts to `local_tasks/results/<task-id>/prompt.turnN.md` and also keeps attempt-scoped copies such as `prompt.attempt1.turn1.md`.
+
 ## Example local config
 
 ```yaml
@@ -134,6 +143,9 @@ workspace:
     path: $SYMPHONY_WORKSPACE_BASELINE_DIR
   sync_back:
     path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
 ```
 
 Leave `SYMPHONY_WORKSPACE_BASELINE_DIR` unset if you only want the clone hook and not the built-in baseline carry-over.

@@ -366,7 +366,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
                 <th data-i18n="table.finished">Finished</th>
                 <th data-i18n="table.runtime">Runtime</th>
                 <th data-i18n="table.turns">Turns</th>
-                <th data-i18n="table.events">Events</th>
+                <th data-i18n="table.events">Recorded Events</th>
                 <th data-i18n="table.workspace">Workspace</th>
               </tr>
             </thead>
@@ -502,7 +502,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
         'table.run': { en: 'Run', zh: '运行' },
         'table.status': { en: 'Status', zh: '状态' },
         'table.finished': { en: 'Finished', zh: '完成时间' },
-        'table.events': { en: 'Events', zh: '事件数' },
+        'table.events': { en: 'Recorded Events', zh: '已记录事件' },
         'history.empty': { en: 'No completed runs recorded yet.', zh: '还没有已完成的运行记录。' },
         'issue.heading': { en: 'Issue', zh: '任务' },
         'issue.unknown': { en: 'Unknown', zh: '未知' },

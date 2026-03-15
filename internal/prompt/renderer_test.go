@@ -36,6 +36,24 @@ func TestContinuationPrompt(t *testing.T) {
 	}
 }
 
+func TestTurnPromptUsesRenderedFirstTurn(t *testing.T) {
+	t.Parallel()
+	renderer := New(workflow.Definition{PromptTemplate: `Identifier: {{ issue.identifier }}`})
+	text := TurnPrompt(renderer, domain.Issue{Identifier: "task-1"}, 1, 1, 5)
+	if text != "Identifier: task-1" {
+		t.Fatalf("unexpected first-turn prompt: %q", text)
+	}
+}
+
+func TestTurnPromptUsesContinuationAfterFirstTurn(t *testing.T) {
+	t.Parallel()
+	renderer := New(workflow.Definition{PromptTemplate: `Identifier: {{ issue.identifier }}`})
+	text := TurnPrompt(renderer, domain.Issue{Identifier: "task-1"}, 1, 2, 5)
+	if !strings.Contains(text, "continuation turn #2 of 5") {
+		t.Fatalf("unexpected continuation prompt: %q", text)
+	}
+}
+
 func TestRendererUsesDefaultPromptTemplate(t *testing.T) {
 	t.Parallel()
 	renderer := New(workflow.Definition{})

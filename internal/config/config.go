@@ -80,7 +80,8 @@ type HooksConfig struct {
 }
 
 type AgentConfig struct {
-	MaxTurns int `yaml:"max_turns" json:"max_turns"`
+	MaxTurns                int  `yaml:"max_turns" json:"max_turns"`
+	PersistPromptsToResults bool `yaml:"persist_prompts_to_results" json:"persist_prompts_to_results"`
 }
 
 type CodexConfig struct {
@@ -166,7 +167,8 @@ type HooksSummary struct {
 }
 
 type AgentSummary struct {
-	MaxTurns int `json:"max_turns"`
+	MaxTurns                int  `json:"max_turns"`
+	PersistPromptsToResults bool `json:"persist_prompts_to_results"`
 }
 
 type CodexSummary struct {
@@ -270,7 +272,7 @@ func (cfg Config) Summary() Summary {
 			BeforeRemove: strings.TrimSpace(cfg.Hooks.BeforeRemove) != "",
 			TimeoutMs:    cfg.Hooks.TimeoutMs,
 		},
-		Agent: AgentSummary{MaxTurns: cfg.Agent.MaxTurns},
+		Agent: AgentSummary{MaxTurns: cfg.Agent.MaxTurns, PersistPromptsToResults: cfg.Agent.PersistPromptsToResults},
 		Codex: CodexSummary{
 			Command:        cfg.Codex.Command,
 			ApprovalPolicy: sanitizedApprovalPolicy(cfg.Codex.ApprovalPolicy),

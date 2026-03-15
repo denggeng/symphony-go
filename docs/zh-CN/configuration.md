@@ -9,7 +9,7 @@
 - `orchestrator`：轮询间隔、并发度与重试上限
 - `workspace`：每任务工作区根目录，以及可选的基线 seed/sync-back
 - `hooks`：工作区生命周期中的可选 shell Hook
-- `agent`：Codex 最大 turn 数
+- `agent`：Codex 最大 turn 数，以及可选的 prompt 落盘能力
 - `codex`：app-server 命令与运行时策略
 - `server`：HTTP 监听地址与可选 Basic Auth
 
@@ -111,6 +111,15 @@ orchestrator:
 
 当前行为是“增量叠加”而不是镜像：seed 与 sync-back 会复制/覆盖源树中存在的文件，但不会删除目标树中缺失的文件。出于安全考虑，被复制树中的 symlink 会被拒绝。
 
+## Agent prompt 落盘
+
+`agent` 配置段支持：
+
+- `agent.max_turns`
+- `agent.persist_prompts_to_results`
+
+`persist_prompts_to_results` 默认关闭，目前仅对 `tracker.kind: local` 生效。开启后，Symphony 会把最新 turn 的 prompt 写到 `local_tasks/results/<task-id>/prompt.turnN.md`，同时额外保留按 attempt 编号的副本，例如 `prompt.attempt1.turn1.md`。
+
 ## 本地模式配置示例
 
 ```yaml
@@ -134,6 +143,9 @@ workspace:
     path: $SYMPHONY_WORKSPACE_BASELINE_DIR
   sync_back:
     path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
 ```
 
 如果你只想保留 clone Hook，而不启用内建基线继承/回写，可以不设置 `SYMPHONY_WORKSPACE_BASELINE_DIR`。

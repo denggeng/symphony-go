@@ -83,6 +83,26 @@ Then run:
 go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 ```
 
+To inspect the exact rendered prompt for a local task before or during a run:
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -task-id hello-endpoint
+# or, from inside a workspace
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -workspace "$PWD" -output /tmp/hello-endpoint-prompt.md
+```
+
+Symphony does not persist first-turn prompts by default; `render-prompt` reconstructs them from `WORKFLOW.md` and the current local task state.
+
+If you want local runs to save the latest prompt files automatically, enable this in your workflow:
+
+```yaml
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
+```
+
+When enabled in local mode, Symphony writes `local_tasks/results/<task-id>/prompt.turn1.md` and attempt-scoped copies such as `prompt.attempt1.turn1.md`.
+
 A successful local run usually produces:
 
 - a running task in `/`

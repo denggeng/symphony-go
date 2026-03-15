@@ -55,6 +55,7 @@ func (runner *Runner) Run(ctx context.Context, issue domain.Issue, attempt int, 
 	maxTurns := runner.cfg.Agent.MaxTurns
 	for turnNumber := 1; turnNumber <= maxTurns; turnNumber++ {
 		turnPrompt := runner.buildPrompt(issue, attempt, turnNumber, maxTurns)
+		runner.persistPrompt(issue, attempt, turnNumber, turnPrompt)
 		if _, err := runner.backend.RunTurn(ctx, session, issue, turnPrompt, onEvent); err != nil {
 			return Result{WorkspacePath: ws.Path, Turns: turnNumber}, err
 		}
@@ -79,10 +80,7 @@ func (runner *Runner) Run(ctx context.Context, issue domain.Issue, attempt int, 
 }
 
 func (runner *Runner) buildPrompt(issue domain.Issue, attempt int, turnNumber int, maxTurns int) string {
-	if turnNumber == 1 {
-		return runner.renderer.Render(issue, attempt)
-	}
-	return prompt.ContinuationPrompt(turnNumber, maxTurns)
+	return prompt.TurnPrompt(runner.renderer, issue, attempt, turnNumber, maxTurns)
 }
 
 func (runner *Runner) shouldContinue(ctx context.Context, issue domain.Issue) (domain.Issue, bool, error) {

@@ -188,7 +188,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
                   <th data-i18n="table.finished">Finished</th>
                   <th data-i18n="table.runtime">Runtime</th>
                   <th data-i18n="table.turns">Turns</th>
-                  <th data-i18n="table.events">Events</th>
+                  <th data-i18n="table.events">Recorded Events</th>
                   <th data-i18n="table.workspace">Workspace</th>
                 </tr>
               </thead>
@@ -211,6 +211,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
             <dt data-i18n="run.finished">Finished</dt><dd id="run-finished">—</dd>
             <dt data-i18n="run.runtime">Runtime</dt><dd id="run-runtime">—</dd>
             <dt data-i18n="run.turns">Turns</dt><dd id="run-turns">—</dd>
+            <dt data-i18n="run.events">Recorded Events</dt><dd id="run-events">—</dd>
             <dt data-i18n="run.workspace">Workspace</dt><dd class="mono" id="run-workspace">—</dd>
             <dt data-i18n="run.session">Session</dt><dd class="mono" id="run-session">—</dd>
             <dt data-i18n="run.pid">PID</dt><dd id="run-pid">—</dd>
@@ -223,6 +224,10 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
 
         <section class="panel">
           <h2 data-i18n="eventLog.title">Event Log</h2>
+          <div id="event-summary" class="muted" style="margin-bottom:12px; display:none;"></div>
+          <div class="actions" style="margin-bottom:12px;">
+            <button id="event-noise-toggle" class="button" type="button" style="display:none;">Show raw delta events</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -268,7 +273,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
         'table.finished': { en: 'Finished', zh: '完成时间' },
         'table.runtime': { en: 'Runtime', zh: '运行时长' },
         'table.turns': { en: 'Turns', zh: '轮次' },
-        'table.events': { en: 'Events', zh: '事件数' },
+        'table.events': { en: 'Recorded Events', zh: '已记录事件' },
         'table.workspace': { en: 'Workspace', zh: '工作区' },
         'table.time': { en: 'Time', zh: '时间' },
         'table.type': { en: 'Type', zh: '类型' },
@@ -285,6 +290,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
         'run.finished': { en: 'Finished', zh: '完成时间' },
         'run.runtime': { en: 'Runtime', zh: '运行时长' },
         'run.turns': { en: 'Turns', zh: '轮次' },
+        'run.events': { en: 'Recorded Events', zh: '已记录事件' },
         'run.workspace': { en: 'Workspace', zh: '工作区' },
         'run.session': { en: 'Session', zh: '会话' },
         'run.pid': { en: 'PID', zh: 'PID' },
@@ -294,6 +300,9 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
         'run.usage': { en: 'Usage', zh: '用量' },
         'eventLog.title': { en: 'Event Log', zh: '事件日志' },
         'event.empty': { en: 'This run has no recorded events.', zh: '这次运行还没有记录任何事件。' },
+        'event.toggle.show': { en: 'Show raw delta events', zh: '显示原始 delta 事件' },
+        'event.toggle.hide': { en: 'Hide raw delta events', zh: '隐藏原始 delta 事件' },
+        'event.collapsedType': { en: 'Collapsed', zh: '折叠' },
         'footer.html': { en: 'API: <a href="/api/v1/history">/api/v1/history</a> · overview: <a href="/">/</a>', zh: 'API：<a href="/api/v1/history">/api/v1/history</a> · 总览：<a href="/">/</a>' },
         'error.loadHistory': { en: 'Failed to load history', zh: '加载历史记录失败' },
         'error.loadRun': { en: 'Failed to load run detail', zh: '加载运行详情失败' },
@@ -312,6 +321,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
       let latestHistoryPayload = null;
       let latestRunDetail = null;
       let currentLanguage = detectLanguage();
+      let showNoisyEvents = false;
 
       function detectLanguage() {
         try {
@@ -407,6 +417,86 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
         return text;
       }
 
+      function eventSummaryText(retainedCount, totalCount, hiddenNoisyCount) {
+        const retained = Number(retainedCount || 0);
+        const total = Number(totalCount || 0);
+        const hidden = Number(hiddenNoisyCount || 0);
+        if (!total) return '';
+        let base = '';
+        if (retained < total) {
+          base = currentLanguage === 'zh'
+            ? '当前展示最近 ' + retained + ' / ' + total + ' 条已记录事件。'
+            : 'Showing the latest ' + retained + ' of ' + total + ' recorded events.';
+        } else {
+          base = currentLanguage === 'zh'
+            ? '当前展示全部 ' + total + ' 条已记录事件。'
+            : 'Showing all ' + total + ' recorded events.';
+        }
+        if (hidden > 0 && !showNoisyEvents) {
+          return currentLanguage === 'zh'
+            ? base + ' 已折叠 ' + hidden + ' 条噪音 delta 事件。'
+            : base + ' Collapsed ' + hidden + ' noisy delta events.';
+        }
+        return base;
+      }
+
+      function isNoisyEvent(item) {
+        const message = String((item && item.message) || '').toLowerCase();
+        return message.includes('delta');
+      }
+
+      function collapseEvents(events) {
+        if (showNoisyEvents) {
+          return { rows: events.slice(), hiddenNoisyCount: 0, noisyCount: events.filter(isNoisyEvent).length };
+        }
+        const rows = [];
+        let hiddenNoisyCount = 0;
+        let noisyBucket = [];
+
+        function flushNoisyBucket() {
+          if (!noisyBucket.length) return;
+          hiddenNoisyCount += noisyBucket.length;
+          rows.push({
+            collapsed: true,
+            count: noisyBucket.length,
+            first_timestamp: noisyBucket[0].timestamp,
+            last_timestamp: noisyBucket[noisyBucket.length - 1].timestamp,
+          });
+          noisyBucket = [];
+        }
+
+        events.forEach(function(item) {
+          if (isNoisyEvent(item)) {
+            noisyBucket.push(item);
+            return;
+          }
+          flushNoisyBucket();
+          rows.push(item);
+        });
+        flushNoisyBucket();
+        return { rows: rows, hiddenNoisyCount: hiddenNoisyCount, noisyCount: hiddenNoisyCount };
+      }
+
+      function eventNoiseToggleLabel(noisyCount) {
+        const suffix = noisyCount > 0 ? ' (' + noisyCount + ')' : '';
+        return showNoisyEvents ? tr('event.toggle.hide') + suffix : tr('event.toggle.show') + suffix;
+      }
+
+      function collapsedEventText(count) {
+        return currentLanguage === 'zh'
+          ? '已折叠连续的 ' + count + ' 条 delta 事件'
+          : 'Collapsed ' + count + ' consecutive delta events';
+      }
+
+      function collapsedEventTime(item) {
+        const first = formatTime(item.first_timestamp);
+        const last = formatTime(item.last_timestamp);
+        if (!item.first_timestamp || !item.last_timestamp || first === last) {
+          return last || first || '—';
+        }
+        return first + ' → ' + last;
+      }
+
       function statusClass(text) {
         const value = String(text || '').toLowerCase();
         if (value.includes('fail') || value.includes('error')) return 'err';
@@ -485,6 +575,7 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
         setText('run-finished', formatTime(run.finished_at));
         setText('run-runtime', formatDuration(run.runtime_seconds));
         setText('run-turns', String(run.turns ?? 0));
+        setText('run-events', String(run.event_count ?? 0));
         setText('run-workspace', run.workspace_path || '—');
         setText('run-session', run.session_id || '—');
         setText('run-pid', run.codex_app_server_pid || '—');
@@ -495,25 +586,55 @@ var historyTemplate = template.Must(template.New("history").Parse(`<!DOCTYPE htm
 
         const body = document.getElementById('event-body');
         const empty = document.getElementById('event-empty');
+        const eventSummary = document.getElementById('event-summary');
+        const eventNoiseToggle = document.getElementById('event-noise-toggle');
+        const collapsed = collapseEvents(events);
+        if (eventSummary) {
+          const summary = eventSummaryText(events.length, run.event_count ?? events.length, collapsed.hiddenNoisyCount);
+          eventSummary.textContent = summary;
+          eventSummary.style.display = summary ? 'block' : 'none';
+        }
+        if (eventNoiseToggle) {
+          if (collapsed.noisyCount > 0) {
+            eventNoiseToggle.textContent = eventNoiseToggleLabel(collapsed.noisyCount);
+            eventNoiseToggle.style.display = 'inline-flex';
+          } else {
+            eventNoiseToggle.style.display = 'none';
+          }
+        }
         body.innerHTML = '';
-        if (!events.length) {
+        if (!collapsed.rows.length) {
           empty.style.display = 'block';
           return;
         }
         empty.style.display = 'none';
-        events.forEach(function(item) {
+        collapsed.rows.forEach(function(item) {
           const row = document.createElement('tr');
-          row.innerHTML = '' +
-            '<td>' + escapeHTML(formatTime(item.timestamp)) + '</td>' +
-            '<td><span class="tag ' + statusClass(item.type) + '">' + escapeHTML(item.type) + '</span></td>' +
-            '<td class="mono">' + escapeHTML(item.turn_id || '—') + '</td>' +
-            '<td>' + escapeHTML(item.message || '—') + '</td>' +
-            '<td>' + escapeHTML(usageText(item.usage)) + '</td>';
+          if (item.collapsed) {
+            row.innerHTML = '' +
+              '<td>' + escapeHTML(collapsedEventTime(item)) + '</td>' +
+              '<td><span class="tag warn">' + escapeHTML(tr('event.collapsedType')) + '</span></td>' +
+              '<td class="mono">—</td>' +
+              '<td>' + escapeHTML(collapsedEventText(item.count)) + '</td>' +
+              '<td>—</td>';
+          } else {
+            row.innerHTML = '' +
+              '<td>' + escapeHTML(formatTime(item.timestamp)) + '</td>' +
+              '<td><span class="tag ' + statusClass(item.type) + '">' + escapeHTML(item.type) + '</span></td>' +
+              '<td class="mono">' + escapeHTML(item.turn_id || '—') + '</td>' +
+              '<td>' + escapeHTML(item.message || '—') + '</td>' +
+              '<td>' + escapeHTML(usageText(item.usage)) + '</td>';
+          }
           body.appendChild(row);
         });
       }
 
       if (languageToggle) languageToggle.addEventListener('click', toggleLanguage);
+      const eventNoiseToggle = document.getElementById('event-noise-toggle');
+      if (eventNoiseToggle) eventNoiseToggle.addEventListener('click', function() {
+        showNoisyEvents = !showNoisyEvents;
+        if (latestRunDetail) renderRun(latestRunDetail);
+      });
       applyStaticTranslations();
 
       (async function init() {

@@ -44,6 +44,7 @@ hooks:
   timeout_ms: 180000
 agent:
   max_turns: 20
+  persist_prompts_to_results: true
 codex:
   command: codex app-server
   approval_policy: never

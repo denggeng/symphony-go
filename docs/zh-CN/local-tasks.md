@@ -179,6 +179,32 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 ```
 
+### 5. 查看实际发给 Codex 的 prompt
+
+Symphony 默认不会把渲染后的首轮 prompt 持久化到磁盘。如果你想查看某个本地任务“真正发给 Codex 的完整 prompt”，可以根据 workflow 模板和当前任务状态即时重建：
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -task-id hello-endpoint
+```
+
+如果你已经在任务的 workspace 目录里，也可以直接用 workspace 路径；Symphony 会用目录名反推出任务 ID：
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -workspace "$PWD"
+```
+
+如果想看第 2 轮及之后发送的 continuation prompt，可以加 `-turn 2`；如果想落到文件里，追加 `-output /tmp/task-prompt.md`。
+
+如果你想让 Symphony 在每次本地任务运行时自动保存最新 prompt 文件，可以在 workflow 中开启：
+
+```yaml
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
+```
+
+开启后，`local_tasks/results/<task-id>/` 下会出现 `prompt.turn1.md`、`prompt.turn2.md`，以及按 attempt 保留的副本，例如 `prompt.attempt1.turn1.md`。
+
 ## Codex 如何完成闭环
 
 在本地模式下，仅仅改完文件并不代表任务已经完成。
@@ -222,6 +248,8 @@ Codex 必须调用：
 - `summary.md` — 面向人的简洁结果摘要
 - `metadata.json` — 任务状态、时间戳与摘要元数据
 - `comments.md` — 如果使用了评论能力，则保存评论内容
+- `prompt.turn*.md` — 如果开启了 `agent.persist_prompts_to_results: true`，保存最新 turn 的 prompt
+- `prompt.attempt*.turn*.md` — 如果开启了 `agent.persist_prompts_to_results: true`，保存按 attempt 归档的 prompt 副本
 - `git/` — 如果启用了 `scripts/git-review-artifacts-after-run.sh`，这里还会保存每个任务的 git 审查工件，包括 changed files、diff，以及可选的本地 workspace commit 包
 
 示例：

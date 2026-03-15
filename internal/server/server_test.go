@@ -125,6 +125,15 @@ func TestRunHistoryPageRendersHTML(t *testing.T) {
 	if !strings.Contains(body, `data-run-id="run-123"`) {
 		t.Fatalf("expected run id in html")
 	}
+	if !strings.Contains(body, "run-events") {
+		t.Fatalf("expected recorded events field in run detail")
+	}
+	if !strings.Contains(body, "event-summary") {
+		t.Fatalf("expected event summary helper in run detail")
+	}
+	if !strings.Contains(body, "event-noise-toggle") {
+		t.Fatalf("expected event noise toggle in run detail")
+	}
 	if !strings.Contains(body, "language-toggle") {
 		t.Fatalf("expected language toggle markup")
 	}

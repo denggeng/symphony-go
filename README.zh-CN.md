@@ -83,6 +83,26 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 ```
 
+如果你想在任务运行前或运行中查看“实际发给 Codex 的完整 prompt”，可以执行：
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -task-id hello-endpoint
+# 或者在任务工作区目录里执行
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -workspace "$PWD" -output /tmp/hello-endpoint-prompt.md
+```
+
+Symphony 默认不会把首轮 prompt 落盘；`render-prompt` 会根据 `WORKFLOW.md` 和当前本地任务状态即时重建。
+
+如果你想让本地任务在运行时自动把最新 prompt 文件保存下来，可以在 workflow 中开启：
+
+```yaml
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
+```
+
+开启后，在本地模式下 Symphony 会写出 `local_tasks/results/<task-id>/prompt.turn1.md`，以及按 attempt 保留的副本，例如 `prompt.attempt1.turn1.md`。
+
 一次成功的本地运行通常会产生：
 
 - `/` 页面上出现运行中的任务

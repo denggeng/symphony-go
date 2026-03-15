@@ -102,8 +102,42 @@ func TestRunReturnsSyncBackFailure(t *testing.T) {
 	}
 }
 
+func TestRunPersistsPromptsToLocalResultsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	workspaceRoot := t.TempDir()
+	resultsRoot := t.TempDir()
+	cfg := testRunnerConfig(workspaceRoot, "", "")
+	cfg.Local.ResultsDir = resultsRoot
+	cfg.Agent.MaxTurns = 2
+	cfg.Agent.PersistPromptsToResults = true
+
+	backend := &stubBackend{}
+	tr := &stubTracker{issueSequences: [][]domain.Issue{
+		{{ID: "TASK-4", Identifier: "TASK-4", State: "In Progress"}},
+		{{ID: "TASK-4", Identifier: "TASK-4", State: "Done"}},
+	}}
+	renderer := prompt.New(workflow.Definition{PromptTemplate: `Task {{ issue.identifier }} attempt {{ attempt }}`})
+	runner := New(cfg, nil, tr, workspace.New(cfg, nil), backend, renderer)
+
+	result, err := runner.Run(context.Background(), domain.Issue{ID: "TASK-4", Identifier: "TASK-4", Title: "slice", State: "To Do"}, 2, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Continuation {
+		t.Fatalf("expected run to finish without continuation")
+	}
+	resultDir := filepath.Join(resultsRoot, "TASK-4")
+	assertRunnerFileContent(t, filepath.Join(resultDir, "prompt.turn1.md"), "Task TASK-4 attempt 2")
+	assertRunnerFileContent(t, filepath.Join(resultDir, "prompt.attempt2.turn1.md"), "Task TASK-4 attempt 2")
+	assertRunnerFileContent(t, filepath.Join(resultDir, "prompt.turn2.md"), prompt.ContinuationPrompt(2, 2))
+	assertRunnerFileContent(t, filepath.Join(resultDir, "prompt.attempt2.turn2.md"), prompt.ContinuationPrompt(2, 2))
+}
+
 type stubTracker struct {
-	issues []domain.Issue
+	issues         []domain.Issue
+	issueSequences [][]domain.Issue
+	fetchByIDCalls int
 }
 
 func (stub *stubTracker) Kind() string {
@@ -115,6 +149,14 @@ func (stub *stubTracker) FetchCandidateIssues(context.Context) ([]domain.Issue, 
 }
 
 func (stub *stubTracker) FetchIssuesByIDs(context.Context, []string) ([]domain.Issue, error) {
+	if len(stub.issueSequences) > 0 {
+		index := stub.fetchByIDCalls
+		if index >= len(stub.issueSequences) {
+			index = len(stub.issueSequences) - 1
+		}
+		stub.fetchByIDCalls++
+		return append([]domain.Issue(nil), stub.issueSequences[index]...), nil
+	}
 	return append([]domain.Issue(nil), stub.issues...), nil
 }
 

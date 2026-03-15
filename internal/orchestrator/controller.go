@@ -79,6 +79,7 @@ type runningEntry struct {
 	LastMessage   string
 	LastTimestamp *time.Time
 	Usage         agent.Usage
+	EventCount    int
 	Events        []RunEventSnapshot
 }
 
@@ -401,7 +402,7 @@ func (controller *Controller) Snapshot() Snapshot {
 			Usage:          entry.Usage,
 			StopRequested:  entry.StopRequested,
 			StopReason:     entry.StopReason,
-			EventCount:     len(entry.Events),
+			EventCount:     totalEventCount(entry),
 		})
 	}
 	retrying := make([]RetryingSnapshot, 0, len(controller.retries))
@@ -691,6 +692,7 @@ func (controller *Controller) onAgentEvent(issueID string, event agent.Event) {
 	entry.Usage = event.Usage
 	entry.SessionID = event.SessionID
 	entry.CodexPID = event.CodexAppServerPID
+	entry.EventCount++
 	entry.Events = appendRunEvent(entry.Events, runEventSnapshotFromAgent(event))
 	if event.Type == "session_started" {
 		entry.Turns++
@@ -863,7 +865,7 @@ func issueDetailFromRunningEntry(issueID string, entry *runningEntry, now time.T
 		Usage:          entry.Usage,
 		StopRequested:  entry.StopRequested,
 		StopReason:     entry.StopReason,
-		EventCount:     len(entry.Events),
+		EventCount:     totalEventCount(entry),
 	}
 }
 
@@ -1007,12 +1009,22 @@ func buildRunHistorySnapshot(entry *runningEntry, result runner.Result, err erro
 		Continuation:   result.Continuation,
 		StopRequested:  entry.StopRequested,
 		StopReason:     entry.StopReason,
-		EventCount:     len(entry.Events),
+		EventCount:     totalEventCount(entry),
 	}
 	if err != nil && !suppressError {
 		history.Error = err.Error()
 	}
 	return history
+}
+
+func totalEventCount(entry *runningEntry) int {
+	if entry == nil {
+		return 0
+	}
+	if entry.EventCount > len(entry.Events) {
+		return entry.EventCount
+	}
+	return len(entry.Events)
 }
 
 func shouldSuppressRunError(stopRequested bool, stopReason string, err error) bool {

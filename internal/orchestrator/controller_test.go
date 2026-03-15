@@ -141,6 +141,57 @@ func TestBuildRunHistorySnapshotKeepsActualFailure(t *testing.T) {
 	}
 }
 
+func TestBuildRunHistorySnapshotPreservesTotalEventCountBeyondRetainedBuffer(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 3, 14, 9, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(45 * time.Second)
+	events := make([]RunEventSnapshot, maxRunEventsPerRun)
+	for i := range events {
+		events[i] = RunEventSnapshot{Timestamp: startedAt.Add(time.Duration(i) * time.Millisecond), Type: "notification", Message: fmt.Sprintf("event-%03d", i)}
+	}
+	entry := &runningEntry{
+		RunID:         "run-3",
+		Issue:         domain.Issue{ID: "ISSUE-3", Identifier: "ISSUE-3", Title: "slice", State: "Done"},
+		Identifier:    "ISSUE-3",
+		WorkspacePath: "/tmp/workspaces/ISSUE-3",
+		StartedAt:     startedAt,
+		EventCount:    maxRunEventsPerRun + 37,
+		Events:        events,
+	}
+
+	history := buildRunHistorySnapshot(entry, runner.Result{}, nil, finishedAt)
+	if history.EventCount != maxRunEventsPerRun+37 {
+		t.Fatalf("EventCount = %d, want %d", history.EventCount, maxRunEventsPerRun+37)
+	}
+}
+
+func TestSnapshotRunningIssueReportsTotalEventCount(t *testing.T) {
+	t.Parallel()
+
+	controller := New(Options{Config: config.Config{Orchestrator: config.OrchestratorConfig{PollIntervalMs: 30_000}}})
+	startedAt := time.Date(2026, 3, 14, 10, 0, 0, 0, time.UTC)
+	events := make([]RunEventSnapshot, maxRunEventsPerRun)
+	controller.mu.Lock()
+	controller.running["RUN-1"] = &runningEntry{
+		RunID:      "run-1",
+		Issue:      domain.Issue{ID: "RUN-1", Identifier: "running", State: "In Progress"},
+		Identifier: "running",
+		StartedAt:  startedAt,
+		EventCount: maxRunEventsPerRun + 12,
+		Events:     events,
+	}
+	controller.mu.Unlock()
+
+	snapshot := controller.Snapshot()
+	if len(snapshot.Running) != 1 {
+		t.Fatalf("unexpected running length: %d", len(snapshot.Running))
+	}
+	if snapshot.Running[0].EventCount != maxRunEventsPerRun+12 {
+		t.Fatalf("EventCount = %d, want %d", snapshot.Running[0].EventCount, maxRunEventsPerRun+12)
+	}
+}
+
 func TestSnapshotIncludesBacklogReadyAndBlockedItems(t *testing.T) {
 	t.Parallel()
 

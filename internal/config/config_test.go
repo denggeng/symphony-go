@@ -24,6 +24,9 @@ func TestFromWorkflowAppliesDefaults(t *testing.T) {
 	if cfg.Agent.MaxTurns != 20 {
 		t.Fatalf("unexpected agent max turns: %d", cfg.Agent.MaxTurns)
 	}
+	if cfg.Agent.PersistPromptsToResults {
+		t.Fatalf("expected prompt persistence to default to false")
+	}
 	if cfg.Codex.ApprovalPolicy != "never" {
 		t.Fatalf("unexpected approval policy: %#v", cfg.Codex.ApprovalPolicy)
 	}
@@ -224,5 +227,23 @@ func TestFromWorkflowRejectsWorkspaceSyncBackStatesWithoutPath(t *testing.T) {
 	}}
 	if _, err := FromWorkflow(definition); err == nil {
 		t.Fatalf("expected validation error")
+	}
+}
+
+func TestFromWorkflowEnablesPromptPersistence(t *testing.T) {
+	t.Parallel()
+	definition := workflow.Definition{Config: map[string]any{
+		"tracker": map[string]any{"kind": "local"},
+		"agent":   map[string]any{"persist_prompts_to_results": true},
+	}}
+	cfg, err := FromWorkflow(definition)
+	if err != nil {
+		t.Fatalf("from workflow: %v", err)
+	}
+	if !cfg.Agent.PersistPromptsToResults {
+		t.Fatalf("expected prompt persistence to be enabled")
+	}
+	if !cfg.Summary().Agent.PersistPromptsToResults {
+		t.Fatalf("expected prompt persistence in summary")
 	}
 }

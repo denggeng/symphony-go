@@ -1,28 +1,39 @@
 ---
 tracker:
-  kind: jira
-  base_url: $JIRA_BASE_URL
-  auth_mode: token
-  email: $JIRA_EMAIL
-  api_token: $JIRA_API_TOKEN
-  project_key: ABC
-  jql: project = ABC AND statusCategory != Done ORDER BY created ASC
+  kind: local
+local:
+  inbox_dir: $SYMPHONY_LOCAL_INBOX_DIR
+  state_dir: $SYMPHONY_LOCAL_STATE_DIR
+  archive_dir: $SYMPHONY_LOCAL_ARCHIVE_DIR
+  results_dir: $SYMPHONY_LOCAL_RESULTS_DIR
   active_states:
     - To Do
     - In Progress
   terminal_states:
     - Done
-    - Closed
-    - Cancelled
-  webhook_secret: $SYMPHONY_JIRA_WEBHOOK_SECRET
+    - Blocked
 orchestrator:
   poll_interval_ms: 30000
-  max_concurrent_agents: 4
+  max_concurrent_agents: 1
   max_retry_backoff_ms: 300000
 workspace:
   root: $SYMPHONY_WORKSPACE_ROOT
+  seed:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+    excludes:
+      - .gocache
+      - .gotmp
+  sync_back:
+    path: $SYMPHONY_WORKSPACE_BASELINE_DIR
+    on_states:
+      - Done
+    excludes:
+      - .gocache
+      - .gotmp
 hooks:
-  timeout_ms: 60000
+  after_create: |
+    "$SYMPHONY_CONTROL_ROOT/scripts/llm-gateway-after-create.sh"
+  timeout_ms: 180000
 agent:
   max_turns: 20
 codex:
@@ -40,10 +51,12 @@ server:
   username: $SYMPHONY_SERVER_AUTH_USERNAME
   password: $SYMPHONY_SERVER_AUTH_PASSWORD
 ---
-You are working on a Jira issue.
+You are working on the `llm-gateway` repository through a local Markdown task.
 
 Identifier: {{ issue.identifier }}
+Task ID: {{ issue.id }}
 Title: {{ issue.title }}
+Current state: {{ issue.state }}
 
 Body:
 {% if issue.description %}
@@ -52,9 +65,30 @@ Body:
 No description provided.
 {% endif %}
 
-Goal:
-- understand the issue
-- make the required code changes in the workspace
-- validate the result with targeted checks
-- update Jira when helpful through the available tools
-- prepare a clear handoff when the work is complete
+Required repository context:
+- Read `AGENTS.md` before making non-trivial code, schema, auth, billing, routing, or provider changes.
+- Read `docs/llm-gateway-design.md` selectively: start with the sections explicitly listed in the task body, and only read additional sections if they are needed to finish the current slice safely.
+- Consult repo-local skills under `.agents/skills/` only when the current slice directly touches those areas.
+- If the task touches portal/admin browser login or OA cookie session bootstrap, consult the OA login skill under `.agents/skills/`.
+
+Operating rules:
+- Treat the Markdown task body as the delivery slice for this run, not as a request to implement the whole product.
+- Start from the task's `Relevant design sections`; do not spend time reading unrelated sections first.
+- Work only inside the current workspace and cloned repository.
+- The baseline repository may already contain user-owned in-progress changes; do not assume a clean git status and do not try to reset or clean unrelated files.
+- Keep changes narrowly scoped to the current task.
+- Prefer incremental scaffolding, package boundaries, interfaces, and targeted tests over broad one-shot implementation.
+- Prefer the simplest compiling implementation that satisfies the current slice; defer optional framework alignment to later slices if it would significantly slow initial delivery.
+- Preserve the compatibility-first, HTTP-first, and control-plane/data-plane separation rules from `AGENTS.md`.
+- Do not invent a new public unified inference API by default.
+- If the task is still too large after reading it, implement the smallest coherent sub-slice you can complete safely and explain the remaining work in the final summary.
+- If the task is explicitly a review or audit slice, do not change production code unless the task body explicitly allows it; inspect, validate, and report instead.
+- If a review or audit slice finds problems, do not silently fix them in the same task; summarize the defects and the recommended follow-up slice in the final `task_update`.
+- Run targeted validation before you stop.
+- When you finish successfully, call `task_update` on {{ issue.identifier }} with:
+  - `state`: `Done`
+  - `summary`: a concise handoff covering what changed, what validation ran, and any follow-up notes
+- If you are blocked, call `task_update` on {{ issue.identifier }} with:
+  - `state`: `Blocked`
+  - `summary`: what blocked you, what you tried, and the next recommended action
+- Do not push, merge, or open a PR unless the task explicitly asks for it and the environment already has working git credentials.

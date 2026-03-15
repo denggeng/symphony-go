@@ -81,6 +81,16 @@ func (renderer *Renderer) Render(issue domain.Issue, attempt int) string {
 	return strings.TrimSpace(resolved)
 }
 
+// TurnPrompt renders the exact prompt Symphony sends to Codex for a specific turn.
+// The first turn uses the workflow template rendered against the task, while later
+// turns use the continuation prompt because the Codex thread already carries prior context.
+func TurnPrompt(renderer *Renderer, issue domain.Issue, attempt int, turnNumber int, maxTurns int) string {
+	if turnNumber <= 1 {
+		return renderer.Render(issue, attempt)
+	}
+	return ContinuationPrompt(turnNumber, maxTurns)
+}
+
 func ContinuationPrompt(turnNumber int, maxTurns int) string {
 	return strings.TrimSpace(fmt.Sprintf(`Continuation guidance:
 

@@ -181,6 +181,32 @@ cp examples/local_tasks/hello-endpoint.md local_tasks/inbox/hello-endpoint.md
 go run ./cmd/symphonyd -workflow ./WORKFLOW.md -log-level info
 ```
 
+### 5. Inspect the exact prompt sent to Codex
+
+Symphony does not persist the rendered first-turn prompt by default. If you want to inspect it for a local task, reconstruct it from the workflow template and current task state:
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -task-id hello-endpoint
+```
+
+If you are already inside the workspace directory for the task, use the workspace path instead; Symphony derives the task id from the workspace basename:
+
+```bash
+go run ./cmd/symphonyctl render-prompt -workflow ./WORKFLOW.md -workspace "$PWD"
+```
+
+Use `-turn 2` (or higher) if you want the continuation prompt for later Codex turns, and `-output /tmp/task-prompt.md` if you want to save it to a file.
+
+If you want Symphony to save the latest prompt files automatically for each local task run, opt in with:
+
+```yaml
+agent:
+  max_turns: 20
+  persist_prompts_to_results: true
+```
+
+That writes `prompt.turn1.md`, `prompt.turn2.md`, and attempt-scoped copies such as `prompt.attempt1.turn1.md` under `local_tasks/results/<task-id>/`.
+
 ## What Codex must do to close the loop
 
 In local mode, the task is not considered finished just because files changed.
@@ -224,6 +250,8 @@ For each local task, `symphony-go` writes:
 - `summary.md` — concise human-readable outcome
 - `metadata.json` — persisted task state, timestamps, and summary
 - `comments.md` — tracker comments, if any were written through the comment helper
+- `prompt.turn*.md` — optional latest turn prompts when `agent.persist_prompts_to_results: true`
+- `prompt.attempt*.turn*.md` — optional attempt-scoped prompt snapshots when `agent.persist_prompts_to_results: true`
 - `git/` — optional per-task review artifacts when you enable `scripts/git-review-artifacts-after-run.sh`, including changed files, diff output, and an optional local workspace commit bundle
 
 Example:
